@@ -24,7 +24,7 @@ SupportPilot AI is a full-stack Generative AI customer-support platform being bu
 
 ## Current status
 
-**Phase 1 — frontend/backend application foundation.** The repository now includes a minimal React frontend that checks a FastAPI health endpoint. Authentication, data storage, AI, RAG, and other product functionality remain intentionally deferred to later roadmap phases.
+**Phase 2A — authentication data/security foundation.** Supabase configuration, the initial workspace schema, RLS policies, atomic workspace creation, and integration scaffolding are prepared. User-facing registration, login, sessions, protected routes, and workspace UX remain for Phase 2B.
 
 The initial portfolio-development and public-demo target is **₹0 / $0 infrastructure and AI cost**, using suitable free tiers and replaceable providers.
 
@@ -34,10 +34,11 @@ The initial portfolio-development and public-demo target is **₹0 / $0 infrastr
 - [`docs/PRODUCT_SPEC.md`](docs/PRODUCT_SPEC.md) — approved V1 product scope
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — planned system architecture and flows
 - [`docs/ROADMAP.md`](docs/ROADMAP.md) — dependency-ordered development plan
+- [`docs/SUPABASE_SETUP.md`](docs/SUPABASE_SETUP.md) — Free-plan project, key, migration, and RLS setup
 
 ## Security note
 
-No production credentials, API keys, passwords, tokens, service-role credentials, or private keys belong in this repository. Real secrets must be supplied through environment variables or deployment secret stores. `.env.example` contains variable names only.
+No production credentials, API keys, passwords, tokens, secret keys, or private keys belong in this repository. Real secrets must be supplied through environment variables or deployment secret stores. Browser code may use only the Supabase publishable key; `SUPABASE_SECRET_KEY` is server-only and bypasses RLS. `.env.example` contains variable names only.
 
 ## Local development
 
@@ -47,7 +48,7 @@ The applications run locally without Docker, paid services, or external accounts
 - Backend: `http://127.0.0.1:8000`
 - Health endpoint: `http://127.0.0.1:8000/api/health`
 
-The defaults work without an environment file. To override local configuration, copy `.env.example` to `.env` at the repository root and set `FRONTEND_URL` and `VITE_API_BASE_URL`. Leave future Gemini and Supabase variables empty during this phase.
+The Phase 1 health screen still works without an environment file. To override local configuration, copy `.env.example` to `.env` at the repository root and set `FRONTEND_URL` and `VITE_API_BASE_URL`. Supabase functionality remains dormant until its URL and publishable-key variables are configured; see `docs/SUPABASE_SETUP.md`.
 
 ### Backend
 

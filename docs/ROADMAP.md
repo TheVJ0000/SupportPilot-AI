@@ -30,6 +30,8 @@ The project should be implemented in dependency order. Each phase should be comp
 
 **Objective:** Add secure authentication, workspace creation/membership, and the tenant-bound authorization foundation required by every later business-owned feature.
 
+**Current progress:** Phase 2A prepares modern Supabase configuration, the initial profile/workspace schema, explicit grants and RLS, atomic workspace creation, and client/server integration scaffolding. Phase 2B remains responsible for registration, login, logout, sessions, protected routes, authenticated API verification, and workspace UX. Phase 2 is not complete until both parts and their integration tests are finished.
+
 **Completion criteria:**
 
 - Users can register, sign in, sign out, and maintain sessions.

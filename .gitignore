@@ -10,8 +10,8 @@ dist/
 downloads/
 eggs/
 .eggs/
-lib/
-lib64/
+/lib/
+/lib64/
 parts/
 sdist/
 var/
@@ -77,6 +77,10 @@ tmp/
 # Local databases
 *.sqlite
 *.sqlite3
+
+# Supabase CLI local state
+supabase/.temp/
+supabase/.branches/
 
 # Misc generated files
 *.tsbuildinfo

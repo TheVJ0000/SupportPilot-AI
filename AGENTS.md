@@ -32,7 +32,9 @@ Therefore:
 - Real secrets must only come from environment variables or deployment secret stores.
 - `.env` files containing secrets must be gitignored.
 - `.env.example` may contain variable names but never real secret values.
-- Never expose privileged Supabase credentials in frontend code.
+- Browser code may use only the Supabase project URL and publishable key. Never reference `SUPABASE_SECRET_KEY` in frontend code or a `VITE_` variable.
+- `SUPABASE_SECRET_KEY` is server-only, bypasses Row Level Security, and must be used only for narrowly scoped privileged operations when no safer option exists.
+- Minimize privileged secret-key usage. Normal user operations must use authenticated user JWTs with Row Level Security rather than bypassing RLS.
 - Apply least-privilege principles.
 - Validate user and API input.
 - Treat tenant isolation as a security requirement.

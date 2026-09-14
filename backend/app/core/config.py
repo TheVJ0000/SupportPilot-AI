@@ -1,7 +1,7 @@
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import AnyHttpUrl
+from pydantic import AnyHttpUrl, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 ROOT_ENV_FILE = Path(__file__).resolve().parents[3] / ".env"
@@ -12,6 +12,9 @@ class Settings(BaseSettings):
 
     app_env: str = "development"
     frontend_url: AnyHttpUrl = AnyHttpUrl("http://localhost:5173")
+    supabase_url: AnyHttpUrl | None = None
+    supabase_publishable_key: str | None = None
+    supabase_secret_key: SecretStr | None = None
 
     model_config = SettingsConfigDict(
         env_file=ROOT_ENV_FILE,

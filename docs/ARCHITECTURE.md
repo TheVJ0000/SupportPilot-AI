@@ -36,6 +36,20 @@ flowchart LR
 - **Background jobs:** introduced only when needed for document processing or other asynchronous work and only after rechecking a suitable free tier.
 - **Email notifications:** introduced later for escalation automation only after verifying a suitable zero-cost option.
 
+## Authentication and workspace foundation
+
+Supabase Auth remains the identity provider. Browser code uses the project URL and publishable key; after sign-in, normal data access is authorized by the user's JWT and PostgreSQL Row Level Security. The secret key is reserved for exceptional, narrowly scoped server operations and is not part of ordinary user request handling.
+
+The initial Phase 2A data model contains only:
+
+- `profiles`, keyed directly to `auth.users.id`;
+- `workspaces`, with a recorded creator;
+- `workspace_members`, with one `owner`, `admin`, or `member` role per user/workspace pair.
+
+Every table has RLS enabled plus explicit grants and operation-specific policies. Private `SECURITY DEFINER` helpers check the caller's membership or owner role without recursively invoking membership policies. They derive identity from `auth.uid()`, use an empty fixed `search_path`, and expose no caller-supplied user-ID authority.
+
+Workspace creation uses one narrowly scoped RPC. It validates the name, inserts the workspace, and creates the authenticated caller's owner membership atomically. Direct client writes to membership roles are not allowed in this phase.
+
 ## RAG ingestion flow
 
 ```mermaid
@@ -134,6 +148,6 @@ Workspace isolation must be enforced at multiple layers:
 
 Generation and embeddings should be called through application interfaces rather than directly throughout feature code. Initial defaults are Gemini free-tier models, but configuration should make provider/model replacement possible without rewriting the RAG or application layers.
 
-## Database scope for this phase
+## Database scope
 
-This architecture intentionally does **not** define the complete database schema. Tables, columns, indexes, RLS policies, and migrations will be designed in a later focused task after the application foundation and authentication requirements are ready.
+Phase 2A defines only the profile and workspace-isolation foundation. The complete product database schema remains intentionally deferred. Documents, chunks, conversations, messages, feedback, escalations, analytics, and their associated indexes and policies will be designed in later focused phases.
