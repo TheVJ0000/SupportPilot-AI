@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "supportpilot-api"
+version = "0.1.0"
+description = "FastAPI foundation for SupportPilot AI"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.141.1,<0.142",
+    "pydantic-settings>=2.15.0,<3",
+    "uvicorn>=0.53.0,<0.54",
+]
+
+[project.optional-dependencies]
+dev = [
+    "httpx>=0.28.1,<0.29",
+    "pytest>=9.1.1,<10",
+    "ruff>=0.16.7,<0.17",
+]
+
+[tool.setuptools.packages.find]
+include = ["app*"]
+
+[tool.pytest.ini_options]
+addopts = "-q"
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["B", "E", "F", "I", "UP"]
