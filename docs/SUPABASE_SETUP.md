@@ -53,6 +53,8 @@ The migration must result in:
 - members unable to create, upload, update, or delete knowledge sources;
 - non-members unable to read another workspace's source metadata or private objects;
 - the `knowledge-files` bucket remaining private with a 10 MB file limit.
+- `recover_file_knowledge_source(uuid)` executable only by authenticated callers and authorizing only owners/admins of the source's derived workspace;
+- interrupted upload recovery checking the exact stored path, moving an existing object only to `pending`, or removing only an absent-object `uploading` row.
 
 The pgTAP suite is in `supabase/tests/database/`. Local database tests require Docker and the Supabase CLI:
 
@@ -77,7 +79,7 @@ The database generates object paths in the form `<workspace-id>/<source-id>/<sou
 
 Creation flows stop at `pending`. `processing`, `ready`, and `failed` are reserved for the later ingestion lifecycle. Phase 3B will add actual content validation, extraction, and chunking. Do not treat extension or MIME validation as proof of file contents.
 
-General source deletion is not exposed in Phase 3A. Failed upload initialization can be canceled only after the Storage API confirms/removes the expected object, avoiding direct edits to Storage metadata or a database-only delete.
+General source deletion is not exposed in Phase 3A. Failed upload initialization can be canceled only after the Storage API confirms removal of the expected object, avoiding direct edits to Storage metadata or a database-only delete. If an `uploading` row remains after an interrupted request, an owner/admin can select **Recover upload**. The recovery RPC accepts only the source ID, locks and authorizes the stored row, and checks its exact private object path: an existing object becomes `pending`, while an absent object removes only that stale row. It also confirms an already-`pending` source without mutation after a lost finalize response.
 
 ## Configure authentication
 
@@ -102,6 +104,8 @@ Use synthetic accounts only, then verify:
 - an owner and admin can add file/FAQ sources while an ordinary member sees read-only controls;
 - unsupported or oversized files are rejected before upload and again by trusted infrastructure;
 - private object reads/uploads/deletes follow the workspace role policies;
+- an interrupted upload exposes recovery only to owners/admins, and a member/non-member cannot invoke the recovery RPC successfully;
+- recovery moves an exact existing object to `pending`, removes only an absent-object stale row, and does not change other lifecycle states;
 - successful files remain `pending`, not `ready`, until a later processing phase.
 
 This repository run did not have a hosted project configured, so these checks have not been claimed as executed.

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   createFaqKnowledgeSource,
   listKnowledgeSources,
+  recoverFileKnowledgeSource,
   uploadKnowledgeFile,
 } from './knowledgeApi'
 import type { KnowledgeSource } from './types'
@@ -36,12 +37,22 @@ export function useKnowledgeSources(workspaceId: string) {
       error,
       refresh,
       uploadFile: async (file: File) => {
-        await uploadKnowledgeFile(workspaceId, file)
+        try {
+          await uploadKnowledgeFile(workspaceId, file)
+        } catch (error) {
+          await refresh()
+          throw error
+        }
         await refresh()
       },
       addFaq: async (question: string, answer: string) => {
         await createFaqKnowledgeSource(workspaceId, question, answer)
         await refresh()
+      },
+      recoverUpload: async (sourceId: string) => {
+        const result = await recoverFileKnowledgeSource(sourceId)
+        await refresh()
+        return result
       },
     }),
     [error, loading, refresh, sources, workspaceId],

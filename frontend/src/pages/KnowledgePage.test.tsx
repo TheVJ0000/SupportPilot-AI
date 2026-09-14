@@ -5,6 +5,7 @@ import { KnowledgePage } from './KnowledgePage'
 
 const mocks = vi.hoisted(() => ({
   addFaq: vi.fn(),
+  recoverUpload: vi.fn(),
   refresh: vi.fn(),
   uploadFile: vi.fn(),
   useKnowledgeSources: vi.fn(),
@@ -34,6 +35,7 @@ describe('KnowledgePage', () => {
       refresh: mocks.refresh,
       uploadFile: mocks.uploadFile,
       addFaq: mocks.addFaq,
+      recoverUpload: mocks.recoverUpload,
     })
   })
 
@@ -63,6 +65,7 @@ describe('KnowledgePage', () => {
       refresh: mocks.refresh,
       uploadFile: mocks.uploadFile,
       addFaq: mocks.addFaq,
+      recoverUpload: mocks.recoverUpload,
     })
 
     render(<KnowledgePage />)
@@ -99,5 +102,69 @@ describe('KnowledgePage', () => {
     expect(screen.getByText(/you have read-only access/i)).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /upload document/i })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /add faq/i })).not.toBeInTheDocument()
+  })
+
+  it('lets a manager recover an incomplete upload', async () => {
+    const user = userEvent.setup()
+    mocks.recoverUpload.mockResolvedValue({
+      sourceId: '30000000-0000-0000-0000-000000000001',
+      action: 'finalized',
+      status: 'pending',
+    })
+    mocks.useKnowledgeSources.mockReturnValue({
+      sources: [
+        {
+          id: '30000000-0000-0000-0000-000000000001',
+          title: 'Interrupted upload',
+          source_type: 'file',
+          status: 'uploading',
+          original_filename: 'guide.pdf',
+          created_at: '2026-09-15T00:00:00Z',
+        },
+      ],
+      loading: false,
+      error: null,
+      refresh: mocks.refresh,
+      uploadFile: mocks.uploadFile,
+      addFaq: mocks.addFaq,
+      recoverUpload: mocks.recoverUpload,
+    })
+
+    render(<KnowledgePage />)
+    await user.click(screen.getByRole('button', { name: /recover upload/i }))
+
+    expect(mocks.recoverUpload).toHaveBeenCalledWith(
+      '30000000-0000-0000-0000-000000000001',
+    )
+    expect(await screen.findByText(/recovered and is now pending processing/i)).toBeInTheDocument()
+  })
+
+  it('does not expose upload recovery to an ordinary member', () => {
+    mocks.useWorkspace.mockReturnValue({
+      selectedWorkspace: { ...WORKSPACE, role: 'member' },
+      loading: false,
+    })
+    mocks.useKnowledgeSources.mockReturnValue({
+      sources: [
+        {
+          id: '30000000-0000-0000-0000-000000000001',
+          title: 'Interrupted upload',
+          source_type: 'file',
+          status: 'uploading',
+          original_filename: 'guide.pdf',
+          created_at: '2026-09-15T00:00:00Z',
+        },
+      ],
+      loading: false,
+      error: null,
+      refresh: mocks.refresh,
+      uploadFile: mocks.uploadFile,
+      addFaq: mocks.addFaq,
+      recoverUpload: mocks.recoverUpload,
+    })
+
+    render(<KnowledgePage />)
+
+    expect(screen.queryByRole('button', { name: /recover upload/i })).not.toBeInTheDocument()
   })
 })

@@ -14,7 +14,7 @@ const STATUS_STYLES: Record<KnowledgeSourceStatus, string> = {
 }
 
 function KnowledgeWorkspace({ workspaceId, canManage }: { workspaceId: string; canManage: boolean }) {
-  const { sources, loading, error, refresh, uploadFile, addFaq } =
+  const { sources, loading, error, refresh, uploadFile, addFaq, recoverUpload } =
     useKnowledgeSources(workspaceId)
   const [file, setFile] = useState<File | null>(null)
   const [question, setQuestion] = useState('')
@@ -23,6 +23,8 @@ function KnowledgeWorkspace({ workspaceId, canManage }: { workspaceId: string; c
   const [addingFaq, setAddingFaq] = useState(false)
   const [uploadMessage, setUploadMessage] = useState<string | null>(null)
   const [faqMessage, setFaqMessage] = useState<string | null>(null)
+  const [recoveringSourceId, setRecoveringSourceId] = useState<string | null>(null)
+  const [recoveryMessage, setRecoveryMessage] = useState<string | null>(null)
 
   async function handleUpload(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -67,6 +69,24 @@ function KnowledgeWorkspace({ workspaceId, canManage }: { workspaceId: string; c
       )
     } finally {
       setAddingFaq(false)
+    }
+  }
+
+  async function handleRecovery(sourceId: string) {
+    if (recoveringSourceId) return
+    setRecoveringSourceId(sourceId)
+    setRecoveryMessage(null)
+    try {
+      const result = await recoverUpload(sourceId)
+      setRecoveryMessage(
+        result.action === 'removed'
+          ? 'The incomplete upload record was safely removed.'
+          : 'The uploaded file was recovered and is now pending processing.',
+      )
+    } catch {
+      setRecoveryMessage('The upload could not be recovered safely. Please try again.')
+    } finally {
+      setRecoveringSourceId(null)
     }
   }
 
@@ -123,6 +143,7 @@ function KnowledgeWorkspace({ workspaceId, canManage }: { workspaceId: string; c
           </div>
           {error && <button className="text-sm font-semibold text-cyan-300" onClick={() => void refresh()} type="button">Try again</button>}
         </div>
+        <p aria-live="polite" className="mt-3 min-h-6 text-sm text-slate-300">{recoveryMessage}</p>
 
         {loading ? (
           <p aria-live="polite" className="mt-6 text-slate-400">Loading knowledge sources…</p>
@@ -148,6 +169,16 @@ function KnowledgeWorkspace({ workspaceId, canManage }: { workspaceId: string; c
                 <div className="flex items-center gap-2">
                   <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-slate-300">{source.source_type}</span>
                   <span className={`rounded-full border px-3 py-1 text-xs font-semibold capitalize ${STATUS_STYLES[source.status]}`}>{source.status}</span>
+                  {canManage && source.status === 'uploading' && (
+                    <button
+                      className="rounded-lg border border-amber-300/25 px-3 py-1 text-xs font-semibold text-amber-100 hover:bg-amber-300/10 disabled:opacity-60"
+                      disabled={recoveringSourceId !== null}
+                      onClick={() => void handleRecovery(source.id)}
+                      type="button"
+                    >
+                      {recoveringSourceId === source.id ? 'Recovering…' : 'Recover upload'}
+                    </button>
+                  )}
                 </div>
               </article>
             ))}

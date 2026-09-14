@@ -130,6 +130,132 @@ describe('knowledge source operations', () => {
     )
   })
 
+  it('keeps metadata and skips cancellation when Storage removal returns an error', async () => {
+    const file = new File(['synthetic guide'], 'guide.pdf', { type: 'application/pdf' })
+    mocks.upload.mockResolvedValue({ data: null, error: { message: 'upload failed' } })
+    mocks.remove.mockResolvedValue({ data: null, error: { message: 'removal failed' } })
+
+    await expect(uploadKnowledgeFile(WORKSPACE_ID, file)).rejects.toThrow(
+      /recovery record was kept/i,
+    )
+
+    expect(mocks.remove).toHaveBeenCalledWith([STORAGE_PATH])
+    expect(mocks.rpc).not.toHaveBeenCalledWith('cancel_file_knowledge_source', {
+      target_source_id: SOURCE_ID,
+    })
+  })
+
+  it('does not claim cleanup succeeded when cancellation returns an error', async () => {
+    const file = new File(['synthetic guide'], 'guide.pdf', { type: 'application/pdf' })
+    mocks.upload.mockResolvedValue({ data: null, error: { message: 'upload failed' } })
+    mocks.rpc.mockImplementation((name: string) => {
+      if (name === 'begin_file_knowledge_source') {
+        return Promise.resolve({
+          data: [{ source_id: SOURCE_ID, storage_path: STORAGE_PATH }],
+          error: null,
+        })
+      }
+      if (name === 'cancel_file_knowledge_source') {
+        return Promise.resolve({ data: null, error: { message: 'cancellation failed' } })
+      }
+      return Promise.resolve({ data: true, error: null })
+    })
+
+    await expect(uploadKnowledgeFile(WORKSPACE_ID, file)).rejects.toThrow(
+      /recovery record was kept/i,
+    )
+  })
+
+  it('recovers exactly once when finalization returns an error after upload', async () => {
+    const file = new File(['synthetic guide'], 'guide.pdf', { type: 'application/pdf' })
+    mocks.rpc.mockImplementation((name: string) => {
+      if (name === 'begin_file_knowledge_source') {
+        return Promise.resolve({
+          data: [{ source_id: SOURCE_ID, storage_path: STORAGE_PATH }],
+          error: null,
+        })
+      }
+      if (name === 'finalize_file_knowledge_source') {
+        return Promise.resolve({ data: null, error: { message: 'response lost' } })
+      }
+      if (name === 'recover_file_knowledge_source') {
+        return Promise.resolve({
+          data: [
+            {
+              source_id: SOURCE_ID,
+              recovery_action: 'finalized',
+              source_status: 'pending',
+            },
+          ],
+          error: null,
+        })
+      }
+      return Promise.resolve({ data: true, error: null })
+    })
+
+    await expect(uploadKnowledgeFile(WORKSPACE_ID, file)).resolves.toBeUndefined()
+    expect(mocks.rpc).toHaveBeenCalledTimes(3)
+    expect(mocks.rpc).toHaveBeenCalledWith('recover_file_knowledge_source', {
+      target_source_id: SOURCE_ID,
+    })
+    expect(mocks.upload).toHaveBeenCalledTimes(1)
+  })
+
+  it('accepts recovery confirmation when a lost finalize response already left pending', async () => {
+    const file = new File(['synthetic guide'], 'guide.pdf', { type: 'application/pdf' })
+    mocks.rpc.mockImplementation((name: string) => {
+      if (name === 'begin_file_knowledge_source') {
+        return Promise.resolve({
+          data: [{ source_id: SOURCE_ID, storage_path: STORAGE_PATH }],
+          error: null,
+        })
+      }
+      if (name === 'finalize_file_knowledge_source') {
+        return Promise.reject(new Error('connection interrupted'))
+      }
+      if (name === 'recover_file_knowledge_source') {
+        return Promise.resolve({
+          data: [
+            {
+              source_id: SOURCE_ID,
+              recovery_action: 'already_pending',
+              source_status: 'pending',
+            },
+          ],
+          error: null,
+        })
+      }
+      return Promise.resolve({ data: true, error: null })
+    })
+
+    await expect(uploadKnowledgeFile(WORKSPACE_ID, file)).resolves.toBeUndefined()
+    expect(mocks.upload).toHaveBeenCalledTimes(1)
+  })
+
+  it('returns a safe recoverable message when the single recovery attempt fails', async () => {
+    const file = new File(['synthetic guide'], 'guide.pdf', { type: 'application/pdf' })
+    mocks.rpc.mockImplementation((name: string) => {
+      if (name === 'begin_file_knowledge_source') {
+        return Promise.resolve({
+          data: [{ source_id: SOURCE_ID, storage_path: STORAGE_PATH }],
+          error: null,
+        })
+      }
+      if (name === 'finalize_file_knowledge_source') {
+        return Promise.resolve({ data: null, error: { message: 'private finalize detail' } })
+      }
+      if (name === 'recover_file_knowledge_source') {
+        return Promise.resolve({ data: null, error: { message: 'private recovery detail' } })
+      }
+      return Promise.resolve({ data: true, error: null })
+    })
+
+    const result = uploadKnowledgeFile(WORKSPACE_ID, file)
+    await expect(result).rejects.toThrow(/use recover upload/i)
+    await expect(result).rejects.not.toThrow(/private/i)
+    expect(mocks.rpc).toHaveBeenCalledTimes(3)
+  })
+
   it('creates an FAQ through the scoped RPC with a derived title', async () => {
     await createFaqKnowledgeSource(
       WORKSPACE_ID,
