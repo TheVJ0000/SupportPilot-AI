@@ -104,6 +104,13 @@ describe('authentication routes', () => {
     expect(screen.queryByText(/authenticated workspace/i)).not.toBeInTheDocument()
   })
 
+  it('keeps the knowledge route protected without a session', async () => {
+    renderRoute('/app/knowledge')
+
+    expect(await screen.findByRole('heading', { name: /welcome back/i })).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: /knowledge base/i })).not.toBeInTheDocument()
+  })
+
   it('moves a successful login into workspace onboarding', async () => {
     const user = userEvent.setup()
     const session = makeSession()
@@ -175,6 +182,7 @@ describe('authentication routes', () => {
           id: '20000000-0000-0000-0000-000000000001',
           name: 'Example Workspace',
           created_at: '2026-09-15T00:00:00Z',
+          workspace_members: [{ role: 'owner' }],
         },
       ],
       error: null,

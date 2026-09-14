@@ -48,6 +48,11 @@ The migration must result in:
 - workspace reads limited to members and workspace management limited to owners;
 - direct browser insertion or role changes in `workspace_members` remaining unavailable;
 - `create_workspace` atomically creating the workspace and its caller-owned membership.
+- RLS enabled on `knowledge_sources`, with member reads and no direct browser mutation grants;
+- owners/admins creating sources only through the scoped RPCs;
+- members unable to create, upload, update, or delete knowledge sources;
+- non-members unable to read another workspace's source metadata or private objects;
+- the `knowledge-files` bucket remaining private with a 10 MB file limit.
 
 The pgTAP suite is in `supabase/tests/database/`. Local database tests require Docker and the Supabase CLI:
 
@@ -57,7 +62,22 @@ supabase db reset
 supabase test db
 ```
 
-The local stack is development-only. Do not expose it to external traffic. After applying the migration to a remote development project, repeat the access scenarios with separate test users before beginning Phase 3.
+The local stack is development-only. Do not expose it to external traffic. After applying the migrations to a remote development project, repeat the access scenarios with separate test users before beginning Phase 3B.
+
+## Configure private knowledge storage
+
+The Phase 3A migration creates and configures `knowledge-files` as a private bucket. Do not make it public in the Dashboard. SupportPilot enforces a 10 MB maximum and supports:
+
+- PDF (`application/pdf`);
+- DOCX (`application/vnd.openxmlformats-officedocument.wordprocessingml.document`);
+- TXT (`text/plain`);
+- Markdown (`text/markdown`, with `text/plain` accepted for browser compatibility).
+
+The database generates object paths in the form `<workspace-id>/<source-id>/<source-id>.<ext>`. The original filename is metadata only and never becomes an arbitrary Storage key. Owners/admins can upload and delete initialized objects; members have read-only access; non-members have no access. All browser operations use the signed-in user's JWT, the publishable key, and RLS.
+
+Creation flows stop at `pending`. `processing`, `ready`, and `failed` are reserved for the later ingestion lifecycle. Phase 3B will add actual content validation, extraction, and chunking. Do not treat extension or MIME validation as proof of file contents.
+
+General source deletion is not exposed in Phase 3A. Failed upload initialization can be canceled only after the Storage API confirms/removes the expected object, avoiding direct edits to Storage metadata or a database-only delete.
 
 ## Configure authentication
 
@@ -79,5 +99,9 @@ Use synthetic accounts only, then verify:
 - one workspace auto-selects, multiple accessible workspaces can be selected, and inaccessible IDs are discarded;
 - the application shell reports `Authenticated API connected` while `/api/auth/me` rejects missing or invalid bearer tokens;
 - a second test user cannot read the first user's profile, membership, or workspace.
+- an owner and admin can add file/FAQ sources while an ordinary member sees read-only controls;
+- unsupported or oversized files are rejected before upload and again by trusted infrastructure;
+- private object reads/uploads/deletes follow the workspace role policies;
+- successful files remain `pending`, not `ready`, until a later processing phase.
 
 This repository run did not have a hosted project configured, so these checks have not been claimed as executed.

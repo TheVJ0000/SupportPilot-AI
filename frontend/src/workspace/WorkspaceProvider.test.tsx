@@ -19,11 +19,13 @@ const WORKSPACE_A = {
   id: '20000000-0000-0000-0000-000000000001',
   name: 'Alpha Support',
   created_at: '2026-09-15T00:00:00Z',
+  workspace_members: [{ role: 'owner' }],
 }
 const WORKSPACE_B = {
   id: '20000000-0000-0000-0000-000000000002',
   name: 'Beta Support',
   created_at: '2026-09-15T00:01:00Z',
+  workspace_members: [{ role: 'admin' }],
 }
 
 function renderWorkspaces() {

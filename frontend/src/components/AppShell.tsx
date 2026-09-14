@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Outlet, useNavigate } from 'react-router-dom'
+import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { getAuthenticatedIdentity, AuthenticatedApiError, type AuthenticatedApiStatus } from '../api/client'
 import { useAuth } from '../auth/useAuth'
 import { Brand } from './Brand'
@@ -78,8 +78,27 @@ export function AppShell() {
       </header>
 
       <div className="mx-auto max-w-6xl px-5 py-10 sm:px-8">
-        <div className="mb-9 flex flex-wrap items-center justify-between gap-3 border-b border-white/10 pb-5">
-          <span className="text-sm font-medium text-slate-400">Authenticated workspace</span>
+        <div className="mb-9 flex flex-wrap items-center justify-between gap-4 border-b border-white/10 pb-5">
+          <nav aria-label="Application" className="flex items-center gap-2">
+            {[
+              { label: 'Workspace', to: '/app/workspaces' },
+              { label: 'Knowledge Base', to: '/app/knowledge' },
+            ].map((item) => (
+              <NavLink
+                className={({ isActive }) =>
+                  `rounded-lg px-3 py-2 text-sm font-semibold transition ${
+                    isActive
+                      ? 'bg-cyan-300/10 text-cyan-200'
+                      : 'text-slate-400 hover:bg-white/5 hover:text-white'
+                  }`
+                }
+                key={item.to}
+                to={item.to}
+              >
+                {item.label}
+              </NavLink>
+            ))}
+          </nav>
           <ApiStatus status={apiStatus} />
         </div>
         {signOutError && <p aria-live="assertive" className="mb-5 text-sm text-rose-300">{signOutError}</p>}

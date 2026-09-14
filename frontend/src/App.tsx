@@ -4,6 +4,7 @@ import { ProtectedRoute } from './auth/ProtectedRoute'
 import { PublicOnlyRoute } from './auth/PublicOnlyRoute'
 import { AppShell } from './components/AppShell'
 import { LandingPage } from './pages/LandingPage'
+import { KnowledgePage } from './pages/KnowledgePage'
 import { LoginPage } from './pages/LoginPage'
 import { RegisterPage } from './pages/RegisterPage'
 import { WorkspacePage } from './pages/WorkspacePage'
@@ -29,6 +30,7 @@ export function AppRoutes() {
         <Route path="/app" element={<AuthenticatedApplication />}>
           <Route index element={<Navigate to="workspaces" replace />} />
           <Route path="workspaces" element={<WorkspacePage />} />
+          <Route path="knowledge" element={<KnowledgePage />} />
         </Route>
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />

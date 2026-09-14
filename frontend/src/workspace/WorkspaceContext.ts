@@ -4,7 +4,10 @@ export interface Workspace {
   id: string
   name: string
   created_at: string
+  role: WorkspaceRole
 }
+
+export type WorkspaceRole = 'owner' | 'admin' | 'member'
 
 export interface WorkspaceContextValue {
   workspaces: Workspace[]

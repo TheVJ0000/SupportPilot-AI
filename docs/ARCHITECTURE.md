@@ -15,7 +15,8 @@ flowchart LR
 
     FE -. authentication .-> AUTH[Supabase Auth]
     SVC --> AUTH
-    SVC --> STORAGE[Supabase Storage]
+    FE -->|Authenticated private uploads| STORAGE[Supabase Storage]
+    SVC --> STORAGE
     SVC --> VEC[pgvector]
     SVC --> AI[AI Provider Abstraction]
     AI --> GEM[Gemini API - initial provider]
@@ -60,6 +61,27 @@ The initial Phase 2A data model contains only:
 Every table has RLS enabled plus explicit grants and operation-specific policies. Private `SECURITY DEFINER` helpers check the caller's membership or owner role without recursively invoking membership policies. They derive identity from `auth.uid()`, use an empty fixed `search_path`, and expose no caller-supplied user-ID authority.
 
 Workspace creation uses one narrowly scoped RPC. It validates the name, inserts the workspace, and creates the authenticated caller's owner membership atomically. Direct client writes to membership roles are not allowed in this phase.
+
+## Knowledge-source storage foundation
+
+Phase 3A introduces `knowledge_sources` as the workspace-owned record for uploaded files and manual FAQs. It records only source metadata/content needed at this stage—never uploaded binary data or embeddings. Statuses cover `uploading`, `pending`, `processing`, `ready`, and `failed`; Phase 3A creation flows stop at `pending` so the UI never implies that unprocessed material is ready for retrieval.
+
+File uploads use this controlled sequence:
+
+```mermaid
+flowchart LR
+    UI[Owner/Admin Knowledge UI] --> BEGIN[begin_file_knowledge_source RPC]
+    BEGIN --> ROW[Source row: uploading]
+    ROW --> STORE[Authenticated Storage API upload]
+    STORE --> FINAL[finalize_file_knowledge_source RPC]
+    FINAL --> PENDING[Source row: pending]
+```
+
+The database generates the creator, source UUID, status, and object path. Objects live in the private `knowledge-files` bucket under `<workspace-id>/<source-id>/<source-id>.<ext>`, are capped at 10 MB, and accept PDF, DOCX, TXT, or Markdown MIME types. Uploads use `upsert: false`; no Storage UPDATE policy exists, so object overwrite is unavailable.
+
+Workspace owners and admins can initialize uploads, add FAQs, and remove failed-upload objects. Members can read permitted source metadata and private objects but cannot create, upload, update, or delete. Non-members have no access. Storage policies authorize an exact trusted source path through workspace membership rather than object ownership or caller-provided paths.
+
+Failed uploads attempt Storage API cleanup before the narrowly scoped cancel RPC removes an `uploading` row. General source deletion is deferred because browser-side deletion across Storage and PostgreSQL cannot be made atomic without introducing a misleading partial-delete workflow.
 
 ## RAG ingestion flow
 
@@ -161,4 +183,4 @@ Generation and embeddings should be called through application interfaces rather
 
 ## Database scope
 
-Phase 2 defines only the profile and workspace-isolation foundation. The complete product database schema remains intentionally deferred. Documents, chunks, conversations, messages, feedback, escalations, analytics, and their associated indexes and policies will be designed in later focused phases.
+Phase 3A adds generalized knowledge-source metadata and private file storage to the Phase 2 profile/workspace foundation. Extracted content, chunks, embeddings, conversations, messages, feedback, escalations, analytics, and their associated indexes and policies remain deferred to later focused phases.

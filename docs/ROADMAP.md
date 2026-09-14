@@ -46,6 +46,10 @@ The current development machine had neither Docker nor the Supabase CLI, so the 
 
 **Objective:** Allow admins to add support knowledge and reliably convert supported content into workspace-scoped, searchable chunks.
 
+**Current progress:** Phase 3A completes secure source storage and management: generalized file/FAQ metadata, lifecycle statuses, scoped creation RPCs, a private 10 MB Storage bucket, workspace-based object paths and policies, and the protected Knowledge Base UI. Owners/admins can add sources; members are read-only; non-members have no access. General two-resource deletion remains deferred to avoid partial deletion.
+
+Phase 3 is not complete. Phase 3B must add validated text extraction and chunking, and a later focused step must add provider-abstracted embeddings and pgvector storage. No source created in Phase 3A is marked `ready`.
+
 **Completion criteria:**
 
 - Supported uploads include PDF, DOCX, TXT, Markdown, and manual FAQs.
