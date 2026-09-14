@@ -38,7 +38,18 @@ flowchart LR
 
 ## Authentication and workspace foundation
 
-Supabase Auth remains the identity provider. Browser code uses the project URL and publishable key; after sign-in, normal data access is authorized by the user's JWT and PostgreSQL Row Level Security. The secret key is reserved for exceptional, narrowly scoped server operations and is not part of ordinary user request handling.
+Supabase Auth is the identity provider. A reusable frontend auth provider restores the Supabase-managed session, subscribes to auth changes, and protects `/app` routes without separately storing access tokens. Registration passes `display_name` as user metadata so the existing database trigger owns profile creation. Login, email-confirmation-required, and logout states are handled explicitly.
+
+Browser code uses only the project URL and publishable key. After sign-in, the workspace provider reads `workspaces` through RLS and creates a workspace only through `create_workspace(workspace_name)`. A selected workspace ID may be stored locally for convenience, but it is always revalidated against the currently accessible RLS result and is never treated as authorization.
+
+Authenticated FastAPI requests flow through one API client that applies the active session's bearer token. The backend authentication dependency:
+
+- verifies ES256/RS256 tokens with the project's JWKS endpoint and cached signing keys;
+- fixes the accepted algorithms, issuer, `authenticated` audience, expiration, and subject requirements;
+- uses Supabase Auth's user endpoint with the publishable key for legacy HS256 projects that cannot be verified by JWKS;
+- returns only the verified user ID and optional email from `/api/auth/me`.
+
+No JWT signing secret is requested or stored. `SUPABASE_SECRET_KEY` remains reserved for future exceptional, narrowly scoped server operations and is not part of ordinary auth, workspace, or API request handling.
 
 The initial Phase 2A data model contains only:
 
@@ -150,4 +161,4 @@ Generation and embeddings should be called through application interfaces rather
 
 ## Database scope
 
-Phase 2A defines only the profile and workspace-isolation foundation. The complete product database schema remains intentionally deferred. Documents, chunks, conversations, messages, feedback, escalations, analytics, and their associated indexes and policies will be designed in later focused phases.
+Phase 2 defines only the profile and workspace-isolation foundation. The complete product database schema remains intentionally deferred. Documents, chunks, conversations, messages, feedback, escalations, analytics, and their associated indexes and policies will be designed in later focused phases.

@@ -30,7 +30,9 @@ The project should be implemented in dependency order. Each phase should be comp
 
 **Objective:** Add secure authentication, workspace creation/membership, and the tenant-bound authorization foundation required by every later business-owned feature.
 
-**Current progress:** Phase 2A prepares modern Supabase configuration, the initial profile/workspace schema, explicit grants and RLS, atomic workspace creation, and client/server integration scaffolding. Phase 2B remains responsible for registration, login, logout, sessions, protected routes, authenticated API verification, and workspace UX. Phase 2 is not complete until both parts and their integration tests are finished.
+**Status:** Complete in the application code and automated unit/component suites. Phase 2A provides the schema, explicit grants, RLS policies, atomic workspace creation, and database security tests. Phase 2B provides registration, login, logout, session restoration, protected routes, authenticated FastAPI identity verification, workspace onboarding, and workspace selection.
+
+The current development machine had neither Docker nor the Supabase CLI, so the existing pgTAP suite was not executed here. No hosted Supabase project was configured for a real-provider smoke test. Those environment-dependent checks remain required after following `docs/SUPABASE_SETUP.md`; this limitation does not imply that they passed.
 
 **Completion criteria:**
 

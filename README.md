@@ -24,7 +24,7 @@ SupportPilot AI is a full-stack Generative AI customer-support platform being bu
 
 ## Current status
 
-**Phase 2A — authentication data/security foundation.** Supabase configuration, the initial workspace schema, RLS policies, atomic workspace creation, and integration scaffolding are prepared. User-facing registration, login, sessions, protected routes, and workspace UX remain for Phase 2B.
+**Phase 2 — authentication and workspace isolation foundation.** The application now includes Supabase registration, login, logout, restored sessions, protected routes, workspace onboarding and selection, RLS-backed workspace access, and a JWT-protected FastAPI identity endpoint. Automated frontend/backend tests cover these flows; a hosted Supabase smoke test still requires local Free-plan project configuration.
 
 The initial portfolio-development and public-demo target is **₹0 / $0 infrastructure and AI cost**, using suitable free tiers and replaceable providers.
 
@@ -46,9 +46,10 @@ The applications run locally without Docker, paid services, or external accounts
 
 - Frontend: `http://localhost:5173`
 - Backend: `http://127.0.0.1:8000`
-- Health endpoint: `http://127.0.0.1:8000/api/health`
+- Public health endpoint: `http://127.0.0.1:8000/api/health`
+- Protected identity endpoint: `http://127.0.0.1:8000/api/auth/me`
 
-The Phase 1 health screen still works without an environment file. To override local configuration, copy `.env.example` to `.env` at the repository root and set `FRONTEND_URL` and `VITE_API_BASE_URL`. Supabase functionality remains dormant until its URL and publishable-key variables are configured; see `docs/SUPABASE_SETUP.md`.
+The product landing page and public health indicator work without an environment file. To enable registration, login, workspaces, and authenticated API verification, copy `.env.example` to `.env` at the repository root and configure the frontend/backend Supabase URL and publishable-key variables. See `docs/SUPABASE_SETUP.md` for the Free-plan setup and smoke-test checklist.
 
 ### Backend
 

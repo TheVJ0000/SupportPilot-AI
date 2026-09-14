@@ -31,6 +31,7 @@ async def test_cors_allows_only_the_configured_frontend_origin() -> None:
             headers={
                 "Origin": "http://localhost:5173",
                 "Access-Control-Request-Method": "GET",
+                "Access-Control-Request-Headers": "Authorization",
             },
         )
         untrusted_response = await client.options(
@@ -42,4 +43,5 @@ async def test_cors_allows_only_the_configured_frontend_origin() -> None:
         )
 
     assert allowed_response.headers["access-control-allow-origin"] == "http://localhost:5173"
+    assert "Authorization" in allowed_response.headers["access-control-allow-headers"]
     assert "access-control-allow-origin" not in untrusted_response.headers
