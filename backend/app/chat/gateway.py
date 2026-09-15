@@ -12,6 +12,8 @@ from app.chat.errors import CustomerChatGatewayError
 from app.chat.models import (
     CreatedCustomerSession,
     CustomerConversationResponse,
+    CustomerFeedbackResponse,
+    CustomerHumanRequestResponse,
     PersistedCustomerTurn,
     StartedCustomerTurn,
 )
@@ -26,6 +28,8 @@ CustomerChatRpc = Literal[
     "begin_customer_chat_turn",
     "get_customer_chat_turn_result",
     "get_customer_conversation",
+    "set_customer_message_feedback",
+    "request_customer_human_support",
     "search_customer_chat_knowledge",
     "complete_customer_chat_turn",
     "fail_customer_chat_turn",
@@ -36,6 +40,8 @@ ALLOWED_CUSTOMER_CHAT_RPCS = frozenset(
         "begin_customer_chat_turn",
         "get_customer_chat_turn_result",
         "get_customer_conversation",
+        "set_customer_message_feedback",
+        "request_customer_human_support",
         "search_customer_chat_knowledge",
         "complete_customer_chat_turn",
         "fail_customer_chat_turn",
@@ -82,6 +88,20 @@ class CustomerChatGateway(Protocol):
         conversation_id: UUID,
         token_hash: str,
     ) -> CustomerConversationResponse: ...
+
+    async def set_feedback(
+        self,
+        conversation_id: UUID,
+        token_hash: str,
+        message_id: UUID,
+        rating: str,
+    ) -> CustomerFeedbackResponse: ...
+
+    async def request_human_support(
+        self,
+        conversation_id: UUID,
+        token_hash: str,
+    ) -> CustomerHumanRequestResponse: ...
 
     def retrieval_gateway(
         self,
@@ -283,6 +303,46 @@ class SupabaseCustomerChatGateway:
         )
         try:
             return CustomerConversationResponse.model_validate(_single_record(payload, operation))
+        except (TypeError, ValidationError, ValueError) as error:
+            raise CustomerChatGatewayError(operation) from error
+
+    async def set_feedback(
+        self,
+        conversation_id: UUID,
+        token_hash: str,
+        message_id: UUID,
+        rating: str,
+    ) -> CustomerFeedbackResponse:
+        operation = "set_customer_message_feedback"
+        payload = await self._rpc(
+            operation,
+            {
+                "target_conversation_id": str(conversation_id),
+                "session_token_hash": token_hash,
+                "target_message_id": str(message_id),
+                "submitted_rating": rating,
+            },
+        )
+        try:
+            return CustomerFeedbackResponse.model_validate(_single_record(payload, operation))
+        except (TypeError, ValidationError, ValueError) as error:
+            raise CustomerChatGatewayError(operation) from error
+
+    async def request_human_support(
+        self,
+        conversation_id: UUID,
+        token_hash: str,
+    ) -> CustomerHumanRequestResponse:
+        operation = "request_customer_human_support"
+        payload = await self._rpc(
+            operation,
+            {
+                "target_conversation_id": str(conversation_id),
+                "session_token_hash": token_hash,
+            },
+        )
+        try:
+            return CustomerHumanRequestResponse.model_validate(_single_record(payload, operation))
         except (TypeError, ValidationError, ValueError) as error:
             raise CustomerChatGatewayError(operation) from error
 

@@ -5,6 +5,7 @@ export const CUSTOMER_MESSAGE_LIMIT = 2_000
 
 export type AnswerStatus = 'answered' | 'insufficient_evidence'
 export type ConversationStatus = 'open' | 'human_requested' | 'closed'
+export type FeedbackRating = 'positive' | 'negative'
 
 export type CitationLocator =
   | { kind: 'faq' }
@@ -27,11 +28,13 @@ export interface CustomerMessage {
   answer_status?: AnswerStatus
   created_at: string
   citations: CustomerCitation[]
+  feedback?: FeedbackRating | null
 }
 
 export interface CustomerConversation {
   conversation_id: string
   status: ConversationStatus
+  human_requested_at?: string | null
   messages: CustomerMessage[]
 }
 
@@ -45,11 +48,23 @@ export interface CreatedCustomerSession {
 export interface CustomerTurnResult {
   conversation_id: string
   turn_id: string
+  message_id: string
   client_message_id: string
   status: AnswerStatus
   answer: string
   citations: CustomerCitation[]
   is_replay: boolean
+}
+
+export interface CustomerFeedbackResult {
+  message_id: string
+  rating: FeedbackRating
+}
+
+export interface CustomerHumanRequestResult {
+  conversation_id: string
+  status: 'human_requested'
+  human_requested_at: string
 }
 
 export class CustomerChatApiError extends Error {
@@ -121,10 +136,20 @@ function isMessage(value: unknown): value is CustomerMessage {
   ) {
     return false
   }
+  const validFeedback =
+    value.feedback === undefined ||
+    value.feedback === null ||
+    value.feedback === 'positive' ||
+    value.feedback === 'negative'
+  if (value.role === 'customer') {
+    return (
+      value.answer_status === undefined &&
+      (value.feedback === undefined || value.feedback === null)
+    )
+  }
   return (
-    (value.role === 'customer' && value.answer_status === undefined) ||
-    (value.role === 'assistant' &&
-      (value.answer_status === 'answered' || value.answer_status === 'insufficient_evidence'))
+    validFeedback &&
+    (value.answer_status === 'answered' || value.answer_status === 'insufficient_evidence')
   )
 }
 
@@ -150,6 +175,16 @@ function parseConversation(value: unknown): CustomerConversation {
     !isRecord(value) ||
     !isUuid(value.conversation_id) ||
     !['open', 'human_requested', 'closed'].includes(String(value.status)) ||
+    !(
+      value.human_requested_at === undefined ||
+      value.human_requested_at === null ||
+      (typeof value.human_requested_at === 'string' &&
+        Number.isFinite(Date.parse(value.human_requested_at)))
+    ) ||
+    (value.status === 'open' &&
+      value.human_requested_at !== undefined &&
+      value.human_requested_at !== null) ||
+    (value.status === 'human_requested' && typeof value.human_requested_at !== 'string') ||
     !Array.isArray(value.messages) ||
     !value.messages.every(isMessage)
   ) {
@@ -163,6 +198,7 @@ function parseTurn(value: unknown): CustomerTurnResult {
     !isRecord(value) ||
     !isUuid(value.conversation_id) ||
     !isUuid(value.turn_id) ||
+    !isUuid(value.message_id) ||
     !isUuid(value.client_message_id) ||
     (value.status !== 'answered' && value.status !== 'insufficient_evidence') ||
     typeof value.answer !== 'string' ||
@@ -173,6 +209,30 @@ function parseTurn(value: unknown): CustomerTurnResult {
     throw new CustomerChatApiError('unavailable')
   }
   return value as unknown as CustomerTurnResult
+}
+
+function parseFeedback(value: unknown): CustomerFeedbackResult {
+  if (
+    !isRecord(value) ||
+    !isUuid(value.message_id) ||
+    (value.rating !== 'positive' && value.rating !== 'negative')
+  ) {
+    throw new CustomerChatApiError('unavailable')
+  }
+  return value as unknown as CustomerFeedbackResult
+}
+
+function parseHumanRequest(value: unknown): CustomerHumanRequestResult {
+  if (
+    !isRecord(value) ||
+    !isUuid(value.conversation_id) ||
+    value.status !== 'human_requested' ||
+    typeof value.human_requested_at !== 'string' ||
+    !Number.isFinite(Date.parse(value.human_requested_at))
+  ) {
+    throw new CustomerChatApiError('unavailable')
+  }
+  return value as unknown as CustomerHumanRequestResult
 }
 
 async function readResponse(response: Response): Promise<unknown> {
@@ -242,4 +302,42 @@ export async function submitCustomerTurn(
     },
   )
   return parseTurn(await readResponse(response))
+}
+
+export async function setCustomerMessageFeedback(
+  conversationId: string,
+  sessionToken: string,
+  messageId: string,
+  rating: FeedbackRating,
+): Promise<CustomerFeedbackResult> {
+  const response = await safeFetch(
+    `${apiBaseUrl}/api/chat/conversations/${encodeURIComponent(conversationId)}/messages/${encodeURIComponent(messageId)}/feedback`,
+    {
+      method: 'PUT',
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+        [CUSTOMER_SESSION_HEADER]: sessionToken,
+      },
+      body: JSON.stringify({ rating }),
+    },
+  )
+  return parseFeedback(await readResponse(response))
+}
+
+export async function requestCustomerHumanSupport(
+  conversationId: string,
+  sessionToken: string,
+): Promise<CustomerHumanRequestResult> {
+  const response = await safeFetch(
+    `${apiBaseUrl}/api/chat/conversations/${encodeURIComponent(conversationId)}/human-request`,
+    {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+        [CUSTOMER_SESSION_HEADER]: sessionToken,
+      },
+    },
+  )
+  return parseHumanRequest(await readResponse(response))
 }

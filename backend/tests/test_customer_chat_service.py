@@ -10,7 +10,9 @@ from app.chat.errors import CustomerChatGatewayError, CustomerChatHttpError
 from app.chat.models import (
     CreatedCustomerSession,
     CustomerConversationResponse,
+    CustomerFeedbackResponse,
     CustomerHistoryMessage,
+    CustomerHumanRequestResponse,
     PersistedCustomerTurn,
     StartedCustomerTurn,
 )
@@ -25,6 +27,7 @@ SESSION_ID = UUID("30000000-0000-4000-8000-000000000001")
 CONVERSATION_ID = UUID("40000000-0000-4000-8000-000000000001")
 CLIENT_MESSAGE_ID = UUID("50000000-0000-4000-8000-000000000001")
 TURN_ID = UUID("60000000-0000-4000-8000-000000000001")
+MESSAGE_ID = UUID("90000000-0000-4000-8000-000000000010")
 SOURCE_ID = UUID("70000000-0000-4000-8000-000000000001")
 CHUNK_ID = UUID("80000000-0000-4000-8000-000000000001")
 TOKEN_HASH = "a" * 64
@@ -106,6 +109,8 @@ class FakeCustomerChatGateway:
         self.begin_calls = []
         self.complete_calls = []
         self.fail_calls = []
+        self.feedback_calls = []
+        self.human_request_calls = []
         self.history_calls = 0
         self.persist_current = persist_current
         self.persisted: PersistedCustomerTurn | None = None
@@ -156,6 +161,7 @@ class FakeCustomerChatGateway:
         self.persisted = PersistedCustomerTurn(
             turn_id=turn_id,
             conversation_id=CONVERSATION_ID,
+            message_id=MESSAGE_ID,
             client_message_id=CLIENT_MESSAGE_ID,
             answer_status=answer_status,
             answer=answer,
@@ -175,6 +181,7 @@ class FakeCustomerChatGateway:
             self.persisted = PersistedCustomerTurn(
                 turn_id=TURN_ID,
                 conversation_id=CONVERSATION_ID,
+                message_id=MESSAGE_ID,
                 client_message_id=CLIENT_MESSAGE_ID,
                 answer_status="answered",
                 answer="Persisted answer.",
@@ -186,6 +193,18 @@ class FakeCustomerChatGateway:
         assert (conversation_id, token_hash) == (CONVERSATION_ID, TOKEN_HASH)
         self.history_calls += 1
         return self.history
+
+    async def set_feedback(self, conversation_id, token_hash, message_id, rating):
+        self.feedback_calls.append((conversation_id, token_hash, message_id, rating))
+        return CustomerFeedbackResponse(message_id=message_id, rating=rating)
+
+    async def request_human_support(self, conversation_id, token_hash):
+        self.human_request_calls.append((conversation_id, token_hash))
+        return CustomerHumanRequestResponse(
+            conversation_id=conversation_id,
+            status="human_requested",
+            human_requested_at=NOW,
+        )
 
 
 def retrieved_chunk() -> RetrievedChunk:
@@ -352,6 +371,7 @@ async def test_failed_turn_retry_reprocesses_the_existing_turn_once() -> None:
             id=UUID("90000000-0000-4000-8000-000000000002"),
             role="assistant",
             content="Earlier answer.",
+            answer_status="answered",
             created_at=NOW,
             citations=[],
         ),
@@ -461,6 +481,25 @@ async def test_history_is_returned_in_gateway_order_without_session_metadata() -
 
 
 @pytest.mark.anyio
+async def test_feedback_and_human_request_delegate_only_to_narrow_gateway_methods() -> None:
+    gateway = FakeCustomerChatGateway()
+    service = CustomerChatService(gateway)
+
+    feedback = await service.set_feedback(
+        CONVERSATION_ID,
+        TOKEN_HASH,
+        MESSAGE_ID,
+        "positive",
+    )
+    human_request = await service.request_human_support(CONVERSATION_ID, TOKEN_HASH)
+
+    assert feedback.rating == "positive"
+    assert gateway.feedback_calls == [(CONVERSATION_ID, TOKEN_HASH, MESSAGE_ID, "positive")]
+    assert human_request.status == "human_requested"
+    assert gateway.human_request_calls == [(CONVERSATION_ID, TOKEN_HASH)]
+
+
+@pytest.mark.anyio
 async def test_new_turn_uses_trusted_history_once_but_persists_original_question() -> None:
     retrieval = FakeRetrievalGateway(matches=[retrieved_chunk()])
     gateway = FakeCustomerChatGateway(retrieval)
@@ -476,6 +515,7 @@ async def test_new_turn_uses_trusted_history_once_but_persists_original_question
             id=UUID("90000000-0000-4000-8000-000000000003"),
             role="assistant",
             content="Refunds are available within 30 days.",
+            answer_status="answered",
             created_at=NOW,
             citations=[],
         ),
@@ -529,6 +569,7 @@ async def test_unexpected_final_history_message_fails_before_ai(
             id=UUID("90000000-0000-4000-8000-000000000002"),
             role=final_role,
             content=final_content,
+            answer_status="answered" if final_role == "assistant" else None,
             created_at=NOW,
             citations=[],
         )

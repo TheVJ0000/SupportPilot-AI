@@ -151,6 +151,9 @@ flowchart LR
     RET --> RAG[Existing grounded RAG engine]
     RAG --> SAVE[Atomic answer and citation snapshot]
     SAVE --> HISTORY[Conversation history API]
+    SAVE --> FEEDBACK[Customer rating persisted on assistant message]
+    HISTORY --> HANDOFF[Confirmed human request]
+    HANDOFF --> PAUSE[human_requested status blocks AI turns]
 ```
 
 Phase 5A introduces one enabled chat configuration per workspace, SHA-256-only customer-session records, conversations, idempotent turns, customer/assistant messages, and historical citation snapshots. FastAPI generates at least 256 bits of token entropy, returns the raw token only once, hashes it immediately on later requests from `X-SupportPilot-Session`, and never stores or logs the raw value. A conversation is limited to 100 customer turns; messages, answers, citations, and retrieval counts are bounded. Sessions remain anonymous and collect no name, email, phone, IP address, location, or browser fingerprint. Robust public abuse/rate limiting remains Phase 8 work.
@@ -168,7 +171,9 @@ Phase 5B.1 adds the public `/chat/:publicId` React route outside the business au
 
 Phase 5B.2 loads authoritative history only after a new or failed-retry turn begins, verifies that its final message is the normalized current customer question, and excludes exactly that message from prior context. A deterministic helper adds at most the six immediately preceding messages, newest-first within the existing 2,000-character budget, then presents selected messages chronologically with the complete current question. The composed string is used only for the existing query embedding and grounded generation path: it is never accepted from the browser, persisted, logged, returned, or produced by an extra Gemini rewrite call. Conversation text may clarify references, but it remains untrusted and cannot support factual claims or citations; only retrieved Knowledge Base chunks are evidence.
 
-The hosted UI renders all customer, assistant, and citation text as plain text. Citation locations support PDF pages, DOCX blocks, text/Markdown lines, and FAQs without inventing source URLs. Phase 5 remains non-streaming; feedback and human-request experience are still deferred.
+Phase 5B.3 adds one workspace-scoped feedback row per assistant message. Anonymous customers can insert or change only `positive`/`negative` feedback through a session-validated server-only RPC; workspace members receive read-only RLS access for the later admin dashboard. A separate idempotent RPC locks an open conversation, verifies the opaque session and enabled chat, records `human_requested_at`, and transitions it to `human_requested`. Existing history, citations, and feedback remain intact, while the existing turn-start guard blocks new AI turns.
+
+The hosted UI renders all customer, assistant, and citation text as plain text. Citation locations support PDF pages, DOCX blocks, text/Markdown lines, and FAQs without inventing source URLs. It restores feedback and handoff state from the backend, uses inline confirmation before handoff, and disables the composer afterward without claiming that a person is connected or notified. Phase 6 will add triage/escalation automation. Phase 5 remains non-streaming; true answer streaming is still deferred.
 
 ### Question-answering principles
 

@@ -11,6 +11,8 @@ from app.chat.gateway import CustomerChatGateway
 from app.chat.models import (
     CustomerChatSessionResult,
     CustomerConversationResponse,
+    CustomerFeedbackResponse,
+    CustomerHumanRequestResponse,
     CustomerTurnResponse,
     PersistedCustomerTurn,
 )
@@ -53,6 +55,7 @@ def _turn_response(result: PersistedCustomerTurn, *, is_replay: bool) -> Custome
     return CustomerTurnResponse(
         conversation_id=result.conversation_id,
         turn_id=result.turn_id,
+        message_id=result.message_id,
         client_message_id=result.client_message_id,
         status=result.answer_status,
         answer=result.answer,
@@ -99,6 +102,33 @@ class CustomerChatService:
     ) -> CustomerConversationResponse:
         try:
             return await self._gateway.get_conversation(conversation_id, token_hash)
+        except CustomerChatGatewayError as error:
+            raise _gateway_http_error(error) from error
+
+    async def set_feedback(
+        self,
+        conversation_id: UUID,
+        token_hash: str,
+        message_id: UUID,
+        rating: str,
+    ) -> CustomerFeedbackResponse:
+        try:
+            return await self._gateway.set_feedback(
+                conversation_id,
+                token_hash,
+                message_id,
+                rating,
+            )
+        except CustomerChatGatewayError as error:
+            raise _gateway_http_error(error) from error
+
+    async def request_human_support(
+        self,
+        conversation_id: UUID,
+        token_hash: str,
+    ) -> CustomerHumanRequestResponse:
+        try:
+            return await self._gateway.request_human_support(conversation_id, token_hash)
         except CustomerChatGatewayError as error:
             raise _gateway_http_error(error) from error
 

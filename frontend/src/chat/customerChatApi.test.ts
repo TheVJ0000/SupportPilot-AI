@@ -4,12 +4,15 @@ import {
   CustomerChatApiError,
   createCustomerSession,
   getCustomerConversation,
+  requestCustomerHumanSupport,
+  setCustomerMessageFeedback,
   submitCustomerTurn,
 } from './customerChatApi'
 
 const CONVERSATION_ID = '40000000-0000-4000-8000-000000000001'
 const CLIENT_MESSAGE_ID = '50000000-0000-4000-8000-000000000001'
 const TURN_ID = '60000000-0000-4000-8000-000000000001'
+const MESSAGE_ID = '90000000-0000-4000-8000-000000000001'
 const PUBLIC_ID = '10000000-0000-4000-8000-000000000001'
 const SESSION_TOKEN = 'A'.repeat(43)
 
@@ -44,12 +47,18 @@ describe('customer chat API client', () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(
-        response({ conversation_id: CONVERSATION_ID, status: 'open', messages: [] }),
+        response({
+          conversation_id: CONVERSATION_ID,
+          status: 'open',
+          human_requested_at: null,
+          messages: [],
+        }),
       )
       .mockResolvedValueOnce(
         response({
           conversation_id: CONVERSATION_ID,
           turn_id: TURN_ID,
+          message_id: MESSAGE_ID,
           client_message_id: CLIENT_MESSAGE_ID,
           status: 'insufficient_evidence',
           answer: 'Not enough verified information.',
@@ -70,6 +79,35 @@ describe('customer chat API client', () => {
       client_message_id: CLIENT_MESSAGE_ID,
       message: 'Question?',
     })
+  })
+
+  it('uses the session header for feedback and human requests', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(response({ message_id: MESSAGE_ID, rating: 'positive' }))
+      .mockResolvedValueOnce(
+        response({
+          conversation_id: CONVERSATION_ID,
+          status: 'human_requested',
+          human_requested_at: '2026-09-15T12:05:00Z',
+        }),
+      )
+    vi.stubGlobal('fetch', fetchMock)
+
+    await setCustomerMessageFeedback(CONVERSATION_ID, SESSION_TOKEN, MESSAGE_ID, 'positive')
+    await requestCustomerHumanSupport(CONVERSATION_ID, SESSION_TOKEN)
+
+    expect(fetchMock.mock.calls[0][0]).toContain(`/messages/${MESSAGE_ID}/feedback`)
+    expect(fetchMock.mock.calls[0][1]).toMatchObject({
+      method: 'PUT',
+      body: JSON.stringify({ rating: 'positive' }),
+    })
+    expect(fetchMock.mock.calls[1][0]).toContain('/human-request')
+    expect(fetchMock.mock.calls[1][1].method).toBe('POST')
+    for (const call of fetchMock.mock.calls) {
+      expect(call[1].headers[CUSTOMER_SESSION_HEADER]).toBe(SESSION_TOKEN)
+      expect(call[1].headers).not.toHaveProperty('Authorization')
+    }
   })
 
   it('classifies invalid sessions and hides raw backend errors', async () => {

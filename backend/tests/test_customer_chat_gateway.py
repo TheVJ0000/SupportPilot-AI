@@ -15,6 +15,7 @@ SESSION_ID = UUID("30000000-0000-4000-8000-000000000001")
 CONVERSATION_ID = UUID("40000000-0000-4000-8000-000000000001")
 CLIENT_MESSAGE_ID = UUID("50000000-0000-4000-8000-000000000001")
 TURN_ID = UUID("60000000-0000-4000-8000-000000000001")
+MESSAGE_ID = UUID("90000000-0000-4000-8000-000000000001")
 SOURCE_ID = UUID("70000000-0000-4000-8000-000000000001")
 CHUNK_ID = UUID("80000000-0000-4000-8000-000000000001")
 TOKEN_HASH = "a" * 64
@@ -176,6 +177,55 @@ async def test_completion_sends_only_bounded_answer_and_trusted_citation_snapsho
     assert payload["citation_payload"] == [citation().model_dump(mode="json")]
     assert "embedding" not in captured.content.decode()
     assert "storage_path" not in captured.content.decode()
+
+
+@pytest.mark.anyio
+async def test_feedback_and_handoff_use_only_narrow_session_scoped_rpcs() -> None:
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        if request.url.path.endswith("set_customer_message_feedback"):
+            return httpx.Response(
+                200,
+                json=[{"message_id": str(MESSAGE_ID), "rating": "positive"}],
+            )
+        return httpx.Response(
+            200,
+            json=[
+                {
+                    "conversation_id": str(CONVERSATION_ID),
+                    "status": "human_requested",
+                    "human_requested_at": EXPIRES_AT.isoformat(),
+                }
+            ],
+        )
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        gateway = SupabaseCustomerChatGateway("https://project.example.test", SECRET_KEY, client)
+        feedback = await gateway.set_feedback(
+            CONVERSATION_ID,
+            TOKEN_HASH,
+            MESSAGE_ID,
+            "positive",
+        )
+        handoff = await gateway.request_human_support(CONVERSATION_ID, TOKEN_HASH)
+
+    assert feedback.rating == "positive"
+    assert handoff.status == "human_requested"
+    assert requests[0].url.path.endswith("/rpc/set_customer_message_feedback")
+    assert json.loads(requests[0].content) == {
+        "target_conversation_id": str(CONVERSATION_ID),
+        "session_token_hash": TOKEN_HASH,
+        "target_message_id": str(MESSAGE_ID),
+        "submitted_rating": "positive",
+    }
+    assert requests[1].url.path.endswith("/rpc/request_customer_human_support")
+    assert json.loads(requests[1].content) == {
+        "target_conversation_id": str(CONVERSATION_ID),
+        "session_token_hash": TOKEN_HASH,
+    }
+    assert all("workspace_id" not in request.content.decode() for request in requests)
 
 
 @pytest.mark.anyio

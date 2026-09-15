@@ -24,7 +24,7 @@ SupportPilot AI is a full-stack Generative AI customer-support platform being bu
 
 ## Current status
 
-**Phase 5B.2 — bounded conversation-aware follow-ups, complete in application code and automated tests.** Customer turns now combine at most six recent persisted messages with the full current question inside the existing 2,000-character retrieval limit. This deterministic internal context improves follow-up interpretation without a query-rewrite AI call; it is untrusted context, never evidence, and factual answers still require retrieved Knowledge Base evidence. Streaming, feedback, and human-request UX remain deferred, so Phase 5 is not complete.
+**Phase 5B.3 — customer feedback and human-handoff foundation, complete in application code and automated tests.** Anonymous customers can rate persisted assistant messages as helpful or not helpful and change that single stored rating. A confirmed human request moves the conversation to `human_requested`, preserves history and feedback, and blocks further AI turns. No human is connected or notified yet; Phase 6 will add bounded triage/escalation automation. True answer streaming remains the final major deferred Phase 5 requirement, so Phase 5 is not complete.
 
 The initial portfolio-development and public-demo target is **₹0 / $0 infrastructure and AI cost**, using suitable free tiers and replaceable providers.
 

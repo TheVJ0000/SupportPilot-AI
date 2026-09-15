@@ -8,6 +8,8 @@ import { CustomerChatPage } from './CustomerChatPage'
 const mocks = vi.hoisted(() => ({
   createCustomerSession: vi.fn(),
   getCustomerConversation: vi.fn(),
+  requestCustomerHumanSupport: vi.fn(),
+  setCustomerMessageFeedback: vi.fn(),
   submitCustomerTurn: vi.fn(),
 }))
 
@@ -17,6 +19,8 @@ vi.mock('../chat/customerChatApi', async (importOriginal) => {
     ...actual,
     createCustomerSession: mocks.createCustomerSession,
     getCustomerConversation: mocks.getCustomerConversation,
+    requestCustomerHumanSupport: mocks.requestCustomerHumanSupport,
+    setCustomerMessageFeedback: mocks.setCustomerMessageFeedback,
     submitCustomerTurn: mocks.submitCustomerTurn,
   }
 })
@@ -26,6 +30,7 @@ const CONVERSATION_ID = '40000000-0000-4000-8000-000000000001'
 const NEW_CONVERSATION_ID = '40000000-0000-4000-8000-000000000002'
 const CLIENT_MESSAGE_ID = '50000000-0000-4000-8000-000000000001'
 const TURN_ID = '60000000-0000-4000-8000-000000000001'
+const ASSISTANT_MESSAGE_ID = '90000000-0000-4000-8000-000000000002'
 const SESSION_TOKEN = 'A'.repeat(43)
 const NEW_SESSION_TOKEN = 'B'.repeat(43)
 const STORAGE_KEY = `supportpilot:chat-session:${PUBLIC_ID}`
@@ -49,8 +54,16 @@ function storedSession(expiresAt = '2099-09-22T00:00:00Z') {
   }
 }
 
-function conversation(messages: CustomerConversation['messages'] = []): CustomerConversation {
-  return { conversation_id: CONVERSATION_ID, status: 'open', messages }
+function conversation(
+  messages: CustomerConversation['messages'] = [],
+  status: CustomerConversation['status'] = 'open',
+): CustomerConversation {
+  return {
+    conversation_id: CONVERSATION_ID,
+    status,
+    human_requested_at: status === 'human_requested' ? '2026-09-15T12:05:00Z' : null,
+    messages,
+  }
 }
 
 function renderChat() {
@@ -72,11 +85,21 @@ describe('hosted customer chat page', () => {
     mocks.submitCustomerTurn.mockResolvedValue({
       conversation_id: CONVERSATION_ID,
       turn_id: TURN_ID,
+      message_id: ASSISTANT_MESSAGE_ID,
       client_message_id: CLIENT_MESSAGE_ID,
       status: 'answered',
       answer: 'Use the account reset link.',
       citations: [],
       is_replay: false,
+    })
+    mocks.setCustomerMessageFeedback.mockImplementation(
+      (_conversationId, _token, messageId, rating) =>
+        Promise.resolve({ message_id: messageId, rating }),
+    )
+    mocks.requestCustomerHumanSupport.mockResolvedValue({
+      conversation_id: CONVERSATION_ID,
+      status: 'human_requested',
+      human_requested_at: '2026-09-15T12:05:00Z',
     })
     vi.spyOn(globalThis.crypto, 'randomUUID').mockReturnValue(CLIENT_MESSAGE_ID)
   })
@@ -101,6 +124,7 @@ describe('hosted customer chat page', () => {
           content: 'Where is my receipt?',
           created_at: '2026-09-15T12:00:00Z',
           citations: [],
+          feedback: null,
         },
         {
           id: '90000000-0000-4000-8000-000000000002',
@@ -109,6 +133,7 @@ describe('hosted customer chat page', () => {
           answer_status: 'answered',
           created_at: '2026-09-15T12:00:01Z',
           citations: [],
+          feedback: null,
         },
       ]),
     )
@@ -185,6 +210,7 @@ describe('hosted customer chat page', () => {
       resolveTurn({
         conversation_id: CONVERSATION_ID,
         turn_id: TURN_ID,
+        message_id: ASSISTANT_MESSAGE_ID,
         client_message_id: CLIENT_MESSAGE_ID,
         status: 'answered',
         answer: 'Use the account reset link.',
@@ -209,6 +235,7 @@ describe('hosted customer chat page', () => {
     mocks.submitCustomerTurn.mockResolvedValue({
       conversation_id: CONVERSATION_ID,
       turn_id: TURN_ID,
+      message_id: ASSISTANT_MESSAGE_ID,
       client_message_id: CLIENT_MESSAGE_ID,
       status: 'insufficient_evidence',
       answer: 'I do not have enough verified information to answer that.',
@@ -237,6 +264,7 @@ describe('hosted customer chat page', () => {
           content: 'Grounded answer.',
           answer_status: 'answered',
           created_at: '2026-09-15T12:00:00Z',
+          feedback: null,
           citations: [
             { source_id: '70000000-0000-4000-8000-000000000001', source_title: 'PDF Policy', source_type: 'file', chunk_index: 0, locator: { kind: 'pdf', page_start: 3, page_end: 3 } },
             { source_id: '70000000-0000-4000-8000-000000000002', source_title: 'DOCX Guide', source_type: 'file', chunk_index: 1, locator: { kind: 'docx', block_start: 4, block_end: 7 } },
@@ -263,6 +291,7 @@ describe('hosted customer chat page', () => {
       .mockResolvedValueOnce({
         conversation_id: CONVERSATION_ID,
         turn_id: TURN_ID,
+        message_id: ASSISTANT_MESSAGE_ID,
         client_message_id: CLIENT_MESSAGE_ID,
         status: 'answered',
         answer: 'Recovered persisted answer.',
@@ -295,6 +324,7 @@ describe('hosted customer chat page', () => {
       .mockResolvedValueOnce({
         conversation_id: NEW_CONVERSATION_ID,
         turn_id: TURN_ID,
+        message_id: ASSISTANT_MESSAGE_ID,
         client_message_id: CLIENT_MESSAGE_ID,
         status: 'answered',
         answer: 'Answered after a fresh session.',
@@ -316,6 +346,166 @@ describe('hosted customer chat page', () => {
       'Keep this question',
     ])
     expect(crypto.randomUUID).toHaveBeenCalledOnce()
+  })
+
+  it('shows accessible feedback only for assistant messages and allows rating changes', async () => {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(storedSession()))
+    mocks.getCustomerConversation.mockResolvedValue(
+      conversation([
+        {
+          id: '90000000-0000-4000-8000-000000000001',
+          role: 'customer',
+          content: 'Can you help?',
+          created_at: '2026-09-15T12:00:00Z',
+          citations: [],
+          feedback: null,
+        },
+        {
+          id: ASSISTANT_MESSAGE_ID,
+          role: 'assistant',
+          content: 'Here is the grounded answer.',
+          answer_status: 'answered',
+          created_at: '2026-09-15T12:00:01Z',
+          citations: [],
+          feedback: null,
+        },
+      ]),
+    )
+    const user = userEvent.setup()
+    renderChat()
+
+    const helpful = await screen.findByRole('button', { name: /mark this answer as helpful/i })
+    const notHelpful = screen.getByRole('button', { name: /mark this answer as not helpful/i })
+    expect(screen.getAllByText('Was this helpful?')).toHaveLength(1)
+    expect(helpful).toHaveAttribute('aria-pressed', 'false')
+
+    await user.click(helpful)
+    expect(mocks.setCustomerMessageFeedback).toHaveBeenCalledWith(
+      CONVERSATION_ID,
+      SESSION_TOKEN,
+      ASSISTANT_MESSAGE_ID,
+      'positive',
+    )
+    expect(helpful).toHaveAttribute('aria-pressed', 'true')
+
+    await user.click(notHelpful)
+    expect(mocks.setCustomerMessageFeedback).toHaveBeenLastCalledWith(
+      CONVERSATION_ID,
+      SESSION_TOKEN,
+      ASSISTANT_MESSAGE_ID,
+      'negative',
+    )
+    expect(notHelpful).toHaveAttribute('aria-pressed', 'true')
+    expect(helpful).toHaveAttribute('aria-pressed', 'false')
+  })
+
+  it('restores selected feedback and hides raw feedback API failures', async () => {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(storedSession()))
+    mocks.getCustomerConversation.mockResolvedValue(
+      conversation([
+        {
+          id: ASSISTANT_MESSAGE_ID,
+          role: 'assistant',
+          content: 'Saved answer.',
+          answer_status: 'answered',
+          created_at: '2026-09-15T12:00:01Z',
+          citations: [],
+          feedback: 'positive',
+        },
+      ]),
+    )
+    mocks.setCustomerMessageFeedback.mockRejectedValue(
+      new Error('raw SQL service-role token details'),
+    )
+    const user = userEvent.setup()
+    renderChat()
+
+    expect(
+      await screen.findByRole('button', { name: /mark this answer as helpful/i }),
+    ).toHaveAttribute('aria-pressed', 'true')
+    await user.click(screen.getByRole('button', { name: /mark this answer as not helpful/i }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      "Feedback couldn't be saved right now.",
+    )
+    expect(screen.queryByText(/raw sql|service-role|token details/i)).not.toBeInTheDocument()
+  })
+
+  it('cancels or confirms a human request and pauses the composer after confirmation', async () => {
+    const user = userEvent.setup()
+    renderChat()
+    const composer = await screen.findByLabelText('Message')
+
+    await user.click(screen.getByRole('button', { name: 'Request a human' }))
+    expect(screen.getByText(/request human support and pause ai messaging/i)).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Cancel' }))
+    expect(mocks.requestCustomerHumanSupport).not.toHaveBeenCalled()
+
+    await user.click(screen.getByRole('button', { name: 'Request a human' }))
+    await user.click(screen.getByRole('button', { name: 'Confirm' }))
+
+    expect(mocks.requestCustomerHumanSupport).toHaveBeenCalledWith(
+      CONVERSATION_ID,
+      SESSION_TOKEN,
+    )
+    expect(
+      await screen.findByText('A human support request has been recorded.'),
+    ).toBeInTheDocument()
+    expect(screen.getByText('AI messaging is paused for this conversation.')).toBeInTheDocument()
+    expect(composer).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Send' })).toBeDisabled()
+    expect(screen.queryByRole('button', { name: 'Request a human' })).not.toBeInTheDocument()
+  })
+
+  it('restores human-requested state while leaving assistant feedback usable', async () => {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(storedSession()))
+    mocks.getCustomerConversation.mockResolvedValue(
+      conversation(
+        [
+          {
+            id: ASSISTANT_MESSAGE_ID,
+            role: 'assistant',
+            content: 'Earlier answer.',
+            answer_status: 'answered',
+            created_at: '2026-09-15T12:00:01Z',
+            citations: [],
+            feedback: null,
+          },
+        ],
+        'human_requested',
+      ),
+    )
+    const user = userEvent.setup()
+    renderChat()
+
+    expect(
+      await screen.findByText('A human support request has been recorded.'),
+    ).toBeInTheDocument()
+    expect(screen.getByLabelText('Message')).toBeDisabled()
+    const helpful = screen.getByRole('button', { name: /mark this answer as helpful/i })
+    expect(helpful).toBeEnabled()
+    await user.click(helpful)
+    expect(mocks.setCustomerMessageFeedback).toHaveBeenCalledOnce()
+  })
+
+  it('offers a human-request CTA after an insufficient-evidence answer', async () => {
+    mocks.submitCustomerTurn.mockResolvedValue({
+      conversation_id: CONVERSATION_ID,
+      turn_id: TURN_ID,
+      message_id: ASSISTANT_MESSAGE_ID,
+      client_message_id: CLIENT_MESSAGE_ID,
+      status: 'insufficient_evidence',
+      answer: 'I do not have enough verified information to answer that.',
+      citations: [],
+      is_replay: false,
+    })
+    const user = userEvent.setup()
+    renderChat()
+
+    await user.type(await screen.findByLabelText('Message'), 'Unknown question')
+    await user.click(screen.getByRole('button', { name: 'Send' }))
+
+    expect(await screen.findAllByRole('button', { name: 'Request a human' })).toHaveLength(2)
   })
 
   it('shows a friendly unavailable state without raw errors', async () => {

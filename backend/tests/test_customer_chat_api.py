@@ -12,7 +12,9 @@ from app.chat.gateway import get_customer_chat_gateway
 from app.chat.models import (
     CreatedCustomerSession,
     CustomerConversationResponse,
+    CustomerFeedbackResponse,
     CustomerHistoryMessage,
+    CustomerHumanRequestResponse,
     PersistedCustomerTurn,
     StartedCustomerTurn,
 )
@@ -30,6 +32,7 @@ TURN_ID = UUID("60000000-0000-4000-8000-000000000001")
 SOURCE_ID = UUID("70000000-0000-4000-8000-000000000001")
 CHUNK_ID = UUID("80000000-0000-4000-8000-000000000001")
 MESSAGE_ID = UUID("90000000-0000-4000-8000-000000000001")
+ASSISTANT_MESSAGE_ID = UUID("90000000-0000-4000-8000-000000000002")
 CUSTOMER_TOKEN = "A" * 43
 TOKEN_HASH = hash_customer_session_token(CUSTOMER_TOKEN)
 NOW = datetime(2026, 9, 15, 12, tzinfo=UTC)
@@ -93,6 +96,11 @@ class ApiCustomerChatGateway:
         self.with_evidence = with_evidence
         self.created_hash: str | None = None
         self.completed: PersistedCustomerTurn | None = None
+        self.feedback_calls: list[tuple] = []
+        self.feedback_by_message: dict[UUID, str] = {}
+        self.human_request_calls = 0
+        self.status = "open"
+        self.human_requested_at = None
 
     async def create_session(self, public_id, token_hash, expires_at):
         assert public_id == PUBLIC_ID
@@ -111,6 +119,8 @@ class ApiCustomerChatGateway:
         assert conversation_id == CONVERSATION_ID
         assert client_message_id == CLIENT_MESSAGE_ID
         assert message == "How do I reset my password?"
+        if self.status != "open":
+            raise CustomerChatGatewayError("begin_customer_chat_turn", "55000")
         return StartedCustomerTurn(
             turn_id=TURN_ID,
             workspace_id=WORKSPACE_ID,
@@ -131,6 +141,7 @@ class ApiCustomerChatGateway:
         self.completed = PersistedCustomerTurn(
             turn_id=turn_id,
             conversation_id=CONVERSATION_ID,
+            message_id=ASSISTANT_MESSAGE_ID,
             client_message_id=CLIENT_MESSAGE_ID,
             answer_status=answer_status,
             answer=answer,
@@ -149,7 +160,8 @@ class ApiCustomerChatGateway:
             raise CustomerChatGatewayError("get_customer_conversation", "28000")
         return CustomerConversationResponse(
             conversation_id=conversation_id,
-            status="open",
+            status=self.status,
+            human_requested_at=self.human_requested_at,
             messages=[
                 CustomerHistoryMessage(
                     id=MESSAGE_ID,
@@ -159,6 +171,27 @@ class ApiCustomerChatGateway:
                     citations=[],
                 )
             ],
+        )
+
+    async def set_feedback(self, conversation_id, token_hash, message_id, rating):
+        if token_hash != TOKEN_HASH:
+            raise CustomerChatGatewayError("set_customer_message_feedback", "28000")
+        if message_id != ASSISTANT_MESSAGE_ID:
+            raise CustomerChatGatewayError("set_customer_message_feedback", "55000")
+        self.feedback_calls.append((conversation_id, token_hash, message_id, rating))
+        self.feedback_by_message[message_id] = rating
+        return CustomerFeedbackResponse(message_id=message_id, rating=rating)
+
+    async def request_human_support(self, conversation_id, token_hash):
+        if token_hash != TOKEN_HASH:
+            raise CustomerChatGatewayError("request_customer_human_support", "28000")
+        self.human_request_calls += 1
+        self.status = "human_requested"
+        self.human_requested_at = NOW
+        return CustomerHumanRequestResponse(
+            conversation_id=conversation_id,
+            status="human_requested",
+            human_requested_at=self.human_requested_at,
         )
 
 
@@ -308,6 +341,7 @@ async def test_turn_returns_persisted_grounded_answer_without_secrets_or_vectors
     assert response.status_code == 200
     body = response.json()
     assert body["status"] == "answered"
+    assert body["message_id"] == str(ASSISTANT_MESSAGE_ID)
     assert body["answer"] == "Use the reset link."
     assert body["citations"][0]["source_id"] == str(SOURCE_ID)
     assert body["citations"][0]["source_title"] == "Account Help"
@@ -346,6 +380,40 @@ async def test_history_returns_ordered_safe_messages_with_no_session_metadata() 
 
 
 @pytest.mark.anyio
+async def test_history_restores_assistant_feedback_and_human_request_state() -> None:
+    class RestoredGateway(ApiCustomerChatGateway):
+        async def get_conversation(self, conversation_id, token_hash):
+            return CustomerConversationResponse(
+                conversation_id=conversation_id,
+                status="human_requested",
+                human_requested_at=NOW,
+                messages=[
+                    CustomerHistoryMessage(
+                        id=ASSISTANT_MESSAGE_ID,
+                        role="assistant",
+                        content="A grounded answer.",
+                        answer_status="answered",
+                        created_at=NOW,
+                        citations=[],
+                        feedback="negative",
+                    )
+                ],
+            )
+
+    app.dependency_overrides[get_customer_chat_gateway] = RestoredGateway
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get(
+            f"/api/chat/conversations/{CONVERSATION_ID}",
+            headers={"X-SupportPilot-Session": CUSTOMER_TOKEN},
+        )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "human_requested"
+    assert response.json()["human_requested_at"] == NOW.isoformat().replace("+00:00", "Z")
+    assert response.json()["messages"][0]["feedback"] == "negative"
+
+
+@pytest.mark.anyio
 async def test_wrong_session_token_is_rejected_safely() -> None:
     configure_dependencies(ApiCustomerChatGateway())
     wrong_token = "B" * 43
@@ -361,3 +429,121 @@ async def test_wrong_session_token_is_rejected_safely() -> None:
 
     assert response.status_code == 401
     assert wrong_token not in response.text
+
+
+@pytest.mark.anyio
+async def test_feedback_requires_session_and_strict_rating_body() -> None:
+    gateway = ApiCustomerChatGateway()
+    configure_dependencies(gateway)
+    path = f"/api/chat/conversations/{CONVERSATION_ID}/messages/{ASSISTANT_MESSAGE_ID}/feedback"
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        missing = await client.put(path, json={"rating": "positive"})
+        invalid = await client.put(
+            path,
+            headers={"X-SupportPilot-Session": CUSTOMER_TOKEN},
+            json={"rating": "neutral"},
+        )
+        extra = await client.put(
+            path,
+            headers={"X-SupportPilot-Session": CUSTOMER_TOKEN},
+            json={"rating": "positive", "comment": "private text"},
+        )
+
+    assert missing.status_code == 401
+    assert invalid.status_code == 422
+    assert extra.status_code == 422
+    assert gateway.feedback_calls == []
+
+
+@pytest.mark.anyio
+async def test_feedback_accepts_both_ratings_and_updates_one_message_safely() -> None:
+    gateway = ApiCustomerChatGateway()
+    configure_dependencies(gateway)
+    path = f"/api/chat/conversations/{CONVERSATION_ID}/messages/{ASSISTANT_MESSAGE_ID}/feedback"
+    headers = {"X-SupportPilot-Session": CUSTOMER_TOKEN}
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        positive = await client.put(path, headers=headers, json={"rating": "positive"})
+        repeated = await client.put(path, headers=headers, json={"rating": "positive"})
+        negative = await client.put(path, headers=headers, json={"rating": "negative"})
+
+    assert positive.json() == {
+        "message_id": str(ASSISTANT_MESSAGE_ID),
+        "rating": "positive",
+    }
+    assert repeated.status_code == 200
+    assert negative.json()["rating"] == "negative"
+    assert gateway.feedback_by_message == {ASSISTANT_MESSAGE_ID: "negative"}
+    assert TOKEN_HASH not in positive.text + repeated.text + negative.text
+
+
+@pytest.mark.anyio
+async def test_feedback_rejects_wrong_message_and_session_safely() -> None:
+    gateway = ApiCustomerChatGateway()
+    configure_dependencies(gateway)
+    wrong_message = UUID("90000000-0000-4000-8000-000000000099")
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        target = await client.put(
+            f"/api/chat/conversations/{CONVERSATION_ID}/messages/{wrong_message}/feedback",
+            headers={"X-SupportPilot-Session": CUSTOMER_TOKEN},
+            json={"rating": "positive"},
+        )
+        session = await client.put(
+            f"/api/chat/conversations/{CONVERSATION_ID}/messages/{ASSISTANT_MESSAGE_ID}/feedback",
+            headers={"X-SupportPilot-Session": "B" * 43},
+            json={"rating": "positive"},
+        )
+
+    assert target.status_code == 409
+    assert session.status_code == 401
+    assert "hash" not in target.text + session.text
+
+
+@pytest.mark.anyio
+async def test_human_request_is_idempotent_and_invokes_no_ai_provider() -> None:
+    gateway = ApiCustomerChatGateway()
+    embedding, generation = configure_dependencies(gateway)
+    path = f"/api/chat/conversations/{CONVERSATION_ID}/human-request"
+    headers = {"X-SupportPilot-Session": CUSTOMER_TOKEN}
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        missing = await client.post(path)
+        first = await client.post(path, headers=headers)
+        repeated = await client.post(path, headers=headers)
+
+    assert missing.status_code == 401
+    assert first.status_code == 200
+    assert first.json() == repeated.json()
+    assert first.json()["status"] == "human_requested"
+    assert gateway.human_request_calls == 2
+    assert embedding.calls == 0
+    assert generation.calls == 0
+
+
+@pytest.mark.anyio
+async def test_human_requested_conversation_restores_state_and_blocks_later_turn() -> None:
+    gateway = ApiCustomerChatGateway()
+    embedding, generation = configure_dependencies(gateway)
+    headers = {"X-SupportPilot-Session": CUSTOMER_TOKEN}
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        requested = await client.post(
+            f"/api/chat/conversations/{CONVERSATION_ID}/human-request",
+            headers=headers,
+        )
+        history = await client.get(
+            f"/api/chat/conversations/{CONVERSATION_ID}",
+            headers=headers,
+        )
+        turn = await client.post(
+            f"/api/chat/conversations/{CONVERSATION_ID}/turns",
+            headers=headers,
+            json={
+                "client_message_id": str(CLIENT_MESSAGE_ID),
+                "message": "How do I reset my password?",
+            },
+        )
+
+    assert requested.status_code == 200
+    assert history.json()["status"] == "human_requested"
+    assert history.json()["human_requested_at"] == NOW.isoformat().replace("+00:00", "Z")
+    assert turn.status_code == 409
+    assert embedding.calls == 0
+    assert generation.calls == 0

@@ -11,6 +11,9 @@ from app.chat.errors import CustomerChatHttpError
 from app.chat.gateway import CustomerChatGateway, get_customer_chat_gateway
 from app.chat.models import (
     CustomerConversationResponse,
+    CustomerFeedbackRequest,
+    CustomerFeedbackResponse,
+    CustomerHumanRequestResponse,
     CustomerSessionCredential,
     CustomerSessionResponse,
     CustomerTurnRequest,
@@ -75,6 +78,46 @@ async def get_customer_conversation(
 ) -> CustomerConversationResponse:
     try:
         return await CustomerChatService(gateway).get_conversation(
+            conversation_id,
+            credential.token_hash,
+        )
+    except CustomerChatHttpError as error:
+        raise HTTPException(status_code=error.status_code, detail=error.detail) from error
+
+
+@router.put(
+    "/conversations/{conversation_id}/messages/{message_id}/feedback",
+    response_model=CustomerFeedbackResponse,
+)
+async def set_customer_message_feedback(
+    conversation_id: UUID,
+    message_id: UUID,
+    request: CustomerFeedbackRequest,
+    credential: Annotated[CustomerSessionCredential, Depends(get_customer_session_credential)],
+    gateway: Annotated[CustomerChatGateway, Depends(get_customer_chat_gateway)],
+) -> CustomerFeedbackResponse:
+    try:
+        return await CustomerChatService(gateway).set_feedback(
+            conversation_id,
+            credential.token_hash,
+            message_id,
+            request.rating,
+        )
+    except CustomerChatHttpError as error:
+        raise HTTPException(status_code=error.status_code, detail=error.detail) from error
+
+
+@router.post(
+    "/conversations/{conversation_id}/human-request",
+    response_model=CustomerHumanRequestResponse,
+)
+async def request_customer_human_support(
+    conversation_id: UUID,
+    credential: Annotated[CustomerSessionCredential, Depends(get_customer_session_credential)],
+    gateway: Annotated[CustomerChatGateway, Depends(get_customer_chat_gateway)],
+) -> CustomerHumanRequestResponse:
+    try:
+        return await CustomerChatService(gateway).request_human_support(
             conversation_id,
             credential.token_hash,
         )
