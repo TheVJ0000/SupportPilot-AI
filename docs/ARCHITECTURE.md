@@ -121,19 +121,23 @@ Normalization uses Unicode NFC, stable newline/whitespace handling, control-char
 flowchart LR
     Q[Customer Question] --> QE[Query Embedding]
     QE --> RET[Workspace-Scoped Similarity Retrieval]
-    RET --> EV[Evidence Selection]
-    EV --> CHECK{Enough Evidence?}
-    CHECK -- Yes --> GEN[Grounded LLM Generation]
-    GEN --> CIT[Citations / Sources]
-    CIT --> SAVE[Conversation Persistence]
-    CHECK -- No --> FALLBACK[Insufficient-Evidence Handling]
-    FALLBACK --> SAVE
-    FALLBACK --> ESC[Optional Human Escalation Path]
+    RET --> CHECK{Evidence Available and Sufficient?}
+    CHECK -- Yes --> GEN[Grounded Gemini Generation]
+    GEN --> VALIDATE[Structured Output Validation]
+    VALIDATE --> CIT[Server-Validated Citations]
+    CIT --> ANSWER[Grounded Answer]
+    CHECK -- No --> FALLBACK[Deterministic Insufficient-Evidence Response]
 ```
 
-Phase 4A implements only the first three retrieval steps. The provider abstraction formats document chunks as `title: {title} | text: {content}` and questions as `task: question answering | query: {question}` for Gemini Embedding 2, with both sides fixed at 768 dimensions. The protected `/api/rag/retrieve` diagnostic endpoint normalizes a 2–2,000 character question, embeds it once, and calls a single user-JWT-scoped Supabase RPC.
+Phase 4A implements the retrieval steps. The provider abstraction formats document chunks as `title: {title} | text: {content}` and questions as `task: question answering | query: {question}` for Gemini Embedding 2, with both sides fixed at 768 dimensions. The protected `/api/rag/retrieve` diagnostic endpoint normalizes a 2–2,000 character question, embeds it once, and calls a single user-JWT-scoped Supabase RPC.
 
-The SQL function verifies workspace membership before searching and includes workspace, `ready` status, non-null vector, provider, model, and dimension compatibility in the ranked query itself. It orders by cosine distance using the existing HNSW index, defaults to eight matches, caps requests at twelve, and returns `1 - cosine_distance` with citation-ready content and unchanged locators. Raw embeddings remain outside the response and ordinary column grants. No answerability threshold is hard-coded because later RAG evaluation must calibrate it; Phase 4B still owns evidence evaluation and grounded generation.
+The SQL function verifies workspace membership before searching and includes workspace, `ready` status, non-null vector, provider, model, and dimension compatibility in the ranked query itself. It orders by cosine distance using the existing HNSW index, defaults to eight matches, caps requests at twelve, and returns `1 - cosine_distance` with citation-ready content and unchanged locators. Raw embeddings remain outside the response and ordinary column grants. No answerability threshold is hard-coded because later RAG evaluation must calibrate it; Phase 4B owns evidence evaluation and grounded generation.
+
+Phase 4B adds the protected `/api/rag/answer` endpoint without changing retrieval semantics. It calls the Phase 4A service exactly once, immediately returns a fixed insufficient-evidence message when no chunks exist, and otherwise labels ranked chunks `E1` through `E8`. Only the normalized question and at most 20,000 characters of evidence content plus minimal source metadata are passed to the replaceable generation-provider interface.
+
+The initial implementation uses Gemini `gemini-3.8-flash` with low thinking, a 1,200-token output limit, and a Pydantic structured-output schema. Retrieved documents and the user question are serialized as JSON and explicitly treated as untrusted data. The model receives no tools, function calling, Google Search grounding, URL context, database access, or raw embeddings. Prompt-injection resistance is defense in depth rather than a mathematical guarantee.
+
+The model may return only `answerable` with a bounded answer and request-local evidence labels, or `insufficient_evidence` with no answer or labels. No fixed cosine threshold is used: when matches exist, the model evaluates their actual content rather than answering from general knowledge. The server validates every returned label, removes duplicate references deterministically, restores retrieval order, and constructs citation titles, types, indices, UUIDs, and locators solely from trusted retrieval results. Unknown labels or malformed structured output fail safely; the model never supplies final citation metadata. Customer chat and conversation persistence remain Phase 5 work.
 
 ### Question-answering principles
 
@@ -145,7 +149,7 @@ The normal support Q&A path is RAG, not an autonomous agent.
 4. Determine whether available evidence is sufficient.
 5. Generate only a grounded answer from approved evidence.
 6. Return relevant source citations.
-7. Persist the conversation and answer metadata.
+7. Persist the conversation and answer metadata in Phase 5.
 
 When evidence is insufficient, the system should not fabricate an answer. It should return an appropriate fallback and offer or trigger escalation where applicable.
 
@@ -197,4 +201,4 @@ Generation and embeddings should be called through application interfaces rather
 
 ## Database scope
 
-Phase 3C completes ingestion with explicit lifecycle metadata, replaceable embeddings, 768-dimensional pgvector storage, and one cosine HNSW index. Phase 4A adds authenticated workspace-scoped semantic retrieval and citation-ready evidence. Answer generation, answerability policy, conversations, messages, feedback, escalations, analytics, and their later-stage policies remain deferred.
+Phase 3C completes ingestion with explicit lifecycle metadata, replaceable embeddings, 768-dimensional pgvector storage, and one cosine HNSW index. Phase 4 adds authenticated workspace-scoped semantic retrieval, evidence-sufficiency decisions, grounded structured generation, and server-validated citations without adding tables. Conversations, messages, feedback, escalations, analytics, and their later-stage policies remain deferred.

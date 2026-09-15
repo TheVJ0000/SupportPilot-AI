@@ -24,7 +24,7 @@ SupportPilot AI is a full-stack Generative AI customer-support platform being bu
 
 ## Current status
 
-**Phase 4A — secure semantic retrieval foundation.** Authenticated workspace members can submit a validated diagnostic question to FastAPI, which creates one Gemini Embedding 2 query vector and calls a membership-protected, workspace-filtered pgvector RPC. The database searches only compatible `ready` sources and returns up to eight best-first cosine matches with unchanged citation locators and no raw vectors. Phase 4B grounded answer generation, customer chat, agents, deployment, and reliable general source deletion remain intentionally deferred.
+**Phase 4 — RAG support engine, complete in application code and unit tests.** Authenticated workspace members can retrieve diagnostic evidence through `/api/rag/retrieve` or request a grounded answer through `/api/rag/answer`. Each answer request embeds the normalized question once, retrieves up to eight compatible workspace chunks, asks Gemini `gemini-3.8-flash` at low thinking level for a strict structured evidence-sufficiency decision, and rebuilds citations from trusted retrieval metadata. No evidence produces a deterministic response without calling generation. Customer chat, conversation persistence, formal RAG evaluation, hosted smoke testing, agents, deployment, and reliable general source deletion remain intentionally deferred.
 
 The initial portfolio-development and public-demo target is **₹0 / $0 infrastructure and AI cost**, using suitable free tiers and replaceable providers.
 
@@ -49,7 +49,7 @@ The applications run locally without Docker, paid services, or external accounts
 - Public health endpoint: `http://127.0.0.1:8000/api/health`
 - Protected identity endpoint: `http://127.0.0.1:8000/api/auth/me`
 
-The product landing page and public health indicator work without an environment file. To enable registration, login, workspaces, and authenticated API verification, copy `.env.example` to `.env` at the repository root and configure the frontend/backend Supabase URL and publishable-key variables. Add a server-only Gemini API key to enable indexing; the rest of the app still starts without it. See `docs/SUPABASE_SETUP.md` for the Free-plan setup and smoke-test checklist.
+The product landing page and public health indicator work without an environment file. To enable registration, login, workspaces, and authenticated API verification, copy `.env.example` to `.env` at the repository root and configure the frontend/backend Supabase URL and publishable-key variables. Add a server-only Gemini API key to enable indexing, retrieval embeddings, and grounded answer generation; the rest of the app still starts without it. The grounded generation call has no web search, URL context, tools, or function access and receives only the normalized question plus bounded retrieved evidence. See `docs/SUPABASE_SETUP.md` for the Free-plan setup and smoke-test checklist.
 
 The Knowledge Base route is `/app/knowledge`. File uploads use the authenticated Supabase client and the private `knowledge-files` bucket. SupportPilot limits each source file to 10 MB, even though the Supabase Free plan currently permits a higher per-file maximum. Owners/admins can recover interrupted uploads and explicitly process pending/failed sources. PDF extraction is limited to 300 pages and does not use OCR, so scanned/image-only PDFs are rejected safely. DOCX files receive ZIP-container safety checks before parsing. TXT and Markdown must be valid UTF-8.
 

@@ -12,6 +12,13 @@ class RetrievalRequest(BaseModel):
     question: str
 
 
+class GroundedAnswerRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    workspace_id: UUID
+    question: str
+
+
 @dataclass(frozen=True)
 class RetrievedChunk:
     chunk_id: UUID
@@ -39,3 +46,19 @@ class RetrievalResponse(BaseModel):
     workspace_id: UUID
     question: str
     matches: list[RetrievalMatch]
+
+
+class TrustedCitation(BaseModel):
+    source_id: UUID
+    source_title: str
+    source_type: Literal["file", "faq"]
+    chunk_index: int
+    locator: dict[str, Any]
+
+
+class GroundedAnswerResponse(BaseModel):
+    workspace_id: UUID
+    question: str
+    status: Literal["answered", "insufficient_evidence"]
+    answer: str
+    citations: list[TrustedCitation]

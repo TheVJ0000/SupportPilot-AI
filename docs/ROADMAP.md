@@ -64,7 +64,9 @@ The local machine still has neither Docker nor the Supabase CLI, so the pgTAP mi
 
 **Objective:** Build the grounded support-answering engine that retrieves relevant workspace evidence, checks answerability, generates responses, and returns citations.
 
-**Current progress:** Phase 4A implements the secure retrieval foundation only. It normalizes bounded questions, uses the Gemini Embedding 2 question-answering format at 768 dimensions, searches inside the authorized workspace with exact provider/model/dimension compatibility, and returns eight best-first cosine matches with citation metadata. No answerability threshold or generated answer exists yet; those remain Phase 4B work.
+**Status:** Complete in application code and automated unit/API suites. Phase 4A provides one-query-embedding, authenticated workspace-scoped cosine retrieval with compatible 768-dimensional Gemini embeddings. Phase 4B adds a replaceable generation provider, Gemini `gemini-3.8-flash` with low thinking and structured output, explicit evidence-sufficiency decisions, deterministic no-evidence handling, prompt-injection defenses, bounded evidence, and citations reconstructed only from trusted retrieval metadata. No fixed similarity threshold is claimed before evaluation data exists, and no external Gemini tools or search are enabled.
+
+The local machine still has neither Docker nor the Supabase CLI, so the pgTAP database suite was not executed. No real Gemini key or hosted Supabase project was configured, so live generation and hosted end-to-end RAG remain unverified. Formal RAG evaluation and complete runtime verification remain Phase 9 validation work; this limitation does not imply those checks passed. Customer chat and conversation persistence begin in Phase 5.
 
 **Completion criteria:**
 

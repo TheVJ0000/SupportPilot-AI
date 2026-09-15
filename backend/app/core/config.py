@@ -18,6 +18,7 @@ class Settings(BaseSettings):
     supabase_secret_key: SecretStr | None = None
     embedding_provider: Literal["gemini"] = "gemini"
     gemini_api_key: SecretStr | None = None
+    gemini_generation_model: str = "gemini-3.8-flash"
     gemini_embedding_model: str = "gemini-embedding-2"
     gemini_embedding_dimension: Literal[768] = 768
 
