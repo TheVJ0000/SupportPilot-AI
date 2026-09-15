@@ -4,7 +4,6 @@ import type { Session, User } from '@supabase/supabase-js'
 import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { AppRoutes } from './App'
-import { AuthProvider } from './auth/AuthProvider'
 
 const mocks = vi.hoisted(() => ({
   getSession: vi.fn(),
@@ -54,9 +53,7 @@ function makeSession(): Session {
 function renderRoute(path: string) {
   return render(
     <MemoryRouter initialEntries={[path]}>
-      <AuthProvider>
-        <AppRoutes />
-      </AuthProvider>
+      <AppRoutes />
     </MemoryRouter>,
   )
 }
@@ -94,6 +91,27 @@ describe('authentication routes', () => {
       'href',
       '/register',
     )
+  })
+
+  it('serves the hosted chat route without business authentication', async () => {
+    vi.mocked(fetch).mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        conversation_id: '40000000-0000-4000-8000-000000000001',
+        session_token: 'A'.repeat(43),
+        workspace_name: 'Public Example Help',
+        expires_at: '2099-09-22T00:00:00Z',
+      }),
+    } as Response)
+
+    renderRoute('/chat/10000000-0000-4000-8000-000000000001')
+
+    expect(
+      await screen.findByRole('heading', { name: 'Public Example Help' }),
+    ).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: /welcome back/i })).not.toBeInTheDocument()
+    expect(mocks.getSession).not.toHaveBeenCalled()
   })
 
   it('does not expose a protected route without a restored session', async () => {

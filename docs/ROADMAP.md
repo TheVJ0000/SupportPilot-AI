@@ -81,9 +81,9 @@ The local machine still has neither Docker nor the Supabase CLI, so the pgTAP da
 
 **Objective:** Deliver a polished hosted support-chat experience built on the RAG engine.
 
-**Status:** Phase 5A is complete in application code and automated backend/API tests. It provides an unpredictable per-workspace public chat ID, seven-day opaque anonymous sessions, persistent conversations/messages, idempotent turns, customer-session-scoped semantic retrieval, reuse of the grounded Phase 4 RAG engine, atomic assistant/citation persistence, and a non-streaming history API. The secret-key boundary is restricted to a fixed allow-list server RPC gateway; browser/admin paths remain user JWT + publishable key + RLS.
+**Status:** Phase 5A and the small Phase 5B.1 UI increment are complete in application code and automated tests. The persistent backend foundation now has a responsive public `/chat/:publicId` interface with minimal browser-session restoration, non-streaming idempotent turns, safe same-ID Retry, insufficient-evidence handling, and trusted citation display. The customer route calls only FastAPI and remains outside business authentication.
 
-Phase 5 is not complete. Phase 5B still must add the hosted customer chat UI, streaming presentation, conversation-aware context, feedback, and human-request experience. The local environment has not run pgTAP or a hosted Supabase/Gemini end-to-end customer turn, so those environment-dependent checks remain outstanding.
+Phase 5 is not complete. Streaming presentation, conversation-aware context, feedback, and human-request experience remain deferred. Hosted Supabase/Gemini end-to-end verification is still environment-dependent.
 
 **Completion criteria:**
 

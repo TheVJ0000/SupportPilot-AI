@@ -24,7 +24,7 @@ SupportPilot AI is a full-stack Generative AI customer-support platform being bu
 
 ## Current status
 
-**Phase 5A — secure customer-conversation foundation, complete in application code and automated unit/API tests.** Each workspace receives an unpredictable public chat ID. An anonymous customer can exchange it for a seven-day opaque session and one persistent conversation, then submit idempotent non-streaming turns through FastAPI. Each new turn reuses the Phase 4 embedding, workspace-scoped retrieval, grounded generation, insufficient-evidence behavior, and trusted citation construction before the answer and citation snapshots are committed atomically. Conversation history can be restored with the same customer-session credential. The Phase 5B chat UI, streaming presentation, conversation-aware context, feedback, and human-request UX remain intentionally deferred; Phase 5 is not complete.
+**Phase 5B.1 — hosted customer chat UI, complete in application code and focused frontend tests.** The public `/chat/:publicId` route creates or restores the minimal anonymous browser session, reloads server-owned conversation history, submits non-streaming idempotent turns, displays grounded answers and trusted citation locations, and safely retries ambiguous failures with the original client message ID. The route remains separate from business authentication and never queries Supabase directly. Streaming, conversation-aware context, feedback, and human-request UX remain deferred; Phase 5 is not complete.
 
 The initial portfolio-development and public-demo target is **₹0 / $0 infrastructure and AI cost**, using suitable free tiers and replaceable providers.
 
