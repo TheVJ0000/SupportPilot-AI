@@ -6,6 +6,7 @@ import {
   getCustomerConversation,
   requestCustomerHumanSupport,
   setCustomerMessageFeedback,
+  streamCustomerTurn,
   submitCustomerTurn,
 } from './customerChatApi'
 
@@ -108,6 +109,43 @@ describe('customer chat API client', () => {
       expect(call[1].headers[CUSTOMER_SESSION_HEADER]).toBe(SESSION_TOKEN)
       expect(call[1].headers).not.toHaveProperty('Authorization')
     }
+  })
+
+  it('validates NDJSON events and progressively delivers answer text', async () => {
+    const turn = {
+      conversation_id: CONVERSATION_ID,
+      turn_id: TURN_ID,
+      message_id: MESSAGE_ID,
+      client_message_id: CLIENT_MESSAGE_ID,
+      status: 'answered',
+      answer: 'Reset it now.',
+      citations: [],
+      is_replay: false,
+    }
+    const body = [
+      JSON.stringify({ event: 'answer_delta', delta: 'Reset ' }),
+      JSON.stringify({ event: 'answer_delta', delta: 'it now.' }),
+      JSON.stringify({ event: 'complete', result: turn }),
+      '',
+    ].join('\n')
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(body, { status: 200, headers: { 'Content-Type': 'application/x-ndjson' } }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+    const deltas: string[] = []
+
+    const result = await streamCustomerTurn(
+      CONVERSATION_ID,
+      SESSION_TOKEN,
+      CLIENT_MESSAGE_ID,
+      'Question?',
+      (delta) => deltas.push(delta),
+    )
+
+    expect(deltas).toEqual(['Reset ', 'it now.'])
+    expect(result).toEqual(turn)
+    expect(fetchMock.mock.calls[0][1].headers.Accept).toBe('application/x-ndjson')
+    expect(fetchMock.mock.calls[0][1].headers[CUSTOMER_SESSION_HEADER]).toBe(SESSION_TOKEN)
   })
 
   it('classifies invalid sessions and hides raw backend errors', async () => {

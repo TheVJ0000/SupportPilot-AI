@@ -1,3 +1,4 @@
+import json
 from datetime import UTC, datetime
 from uuid import UUID
 
@@ -232,6 +233,30 @@ async def test_public_session_endpoint_needs_no_supabase_jwt_and_returns_raw_tok
     assert body["session_token"] != gateway.created_hash
     assert "workspace_id" not in body
     assert "token_hash" not in body
+
+
+@pytest.mark.anyio
+async def test_customer_turn_stream_returns_answer_deltas_and_completion() -> None:
+    gateway = ApiCustomerChatGateway()
+    configure_dependencies(gateway)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post(
+            f"/api/chat/conversations/{CONVERSATION_ID}/turns/stream",
+            headers={"X-SupportPilot-Session": CUSTOMER_TOKEN},
+            json={
+                "client_message_id": str(CLIENT_MESSAGE_ID),
+                "message": "How do I reset my password?",
+            },
+        )
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("application/x-ndjson")
+    assert response.headers["cache-control"] == "no-store"
+    events = [json.loads(line) for line in response.text.splitlines()]
+    assert "".join(event["delta"] for event in events[:-1]) == "Use the reset link."
+    assert events[-1]["event"] == "complete"
+    assert events[-1]["result"]["message_id"] == str(ASSISTANT_MESSAGE_ID)
+    assert gateway.completed is not None
 
 
 @pytest.mark.anyio

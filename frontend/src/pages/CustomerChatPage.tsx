@@ -8,7 +8,7 @@ import {
   getCustomerConversation,
   requestCustomerHumanSupport,
   setCustomerMessageFeedback,
-  submitCustomerTurn,
+  streamCustomerTurn,
   type CitationLocator,
   type CustomerCitation,
   type CustomerMessage,
@@ -75,6 +75,7 @@ function MessageBubble({
   onRequestHuman,
 }: MessageBubbleProps) {
   const isCustomer = message.role === 'customer'
+  const isStreaming = !isCustomer && message.answer_status === undefined
   return (
     <article
       className={`max-w-[88%] whitespace-pre-wrap break-words rounded-3xl px-5 py-4 shadow-sm sm:max-w-[78%] ${
@@ -84,8 +85,9 @@ function MessageBubble({
       }`}
     >
       <p className="leading-7">{message.content}</p>
-      {!isCustomer && <CitationList citations={message.citations} />}
-      {!isCustomer && (
+      {isStreaming && <span className="ml-1 inline-block animate-pulse" aria-hidden="true">▍</span>}
+      {!isCustomer && !isStreaming && <CitationList citations={message.citations} />}
+      {!isCustomer && !isStreaming && (
         <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-slate-200 pt-3">
           <span className="mr-1 text-xs font-semibold text-slate-500">Was this helpful?</span>
           <button
@@ -142,6 +144,17 @@ function assistantMessage(result: CustomerTurnResult): CustomerMessage {
     answer_status: result.status,
     created_at: new Date().toISOString(),
     citations: result.citations,
+    feedback: null,
+  }
+}
+
+function streamingAssistantMessage(id: string): CustomerMessage {
+  return {
+    id,
+    role: 'assistant',
+    content: '',
+    created_at: new Date().toISOString(),
+    citations: [],
     feedback: null,
   }
 }
@@ -237,16 +250,34 @@ export function CustomerChatPage() {
     }
     sendingRef.current = true
     setSending(true)
+    let streamMessageId = `stream-${outbound.clientMessageId}`
 
     try {
       let activeSession = session
       let result: CustomerTurnResult
+      const appendDelta = (delta: string): void => {
+        setMessages((current) => {
+          const existing = current.find((message) => message.id === streamMessageId)
+          if (!existing) {
+            return [
+              ...current,
+              { ...streamingAssistantMessage(streamMessageId), content: delta },
+            ]
+          }
+          return current.map((message) =>
+            message.id === streamMessageId
+              ? { ...message, content: message.content + delta }
+              : message,
+          )
+        })
+      }
       try {
-        result = await submitCustomerTurn(
+        result = await streamCustomerTurn(
           activeSession.conversationId,
           activeSession.sessionToken,
           outbound.clientMessageId,
           outbound.message,
+          appendDelta,
         )
       } catch (caught) {
         if (!(caught instanceof CustomerChatApiError) || caught.kind !== 'invalid-session') {
@@ -259,11 +290,13 @@ export function CustomerChatPage() {
         setMessages([localCustomerMessage(outbound)])
         setConversationStatus('open')
         setHumanRequestedAt(null)
-        result = await submitCustomerTurn(
+        streamMessageId = `stream-${outbound.clientMessageId}-retry`
+        result = await streamCustomerTurn(
           activeSession.conversationId,
           activeSession.sessionToken,
           outbound.clientMessageId,
           outbound.message,
+          appendDelta,
         )
       }
       if (
@@ -272,9 +305,16 @@ export function CustomerChatPage() {
       ) {
         throw new CustomerChatApiError('unavailable')
       }
-      setMessages((current) => [...current, assistantMessage(result)])
+      setMessages((current) => {
+        const finalMessage = assistantMessage(result)
+        if (!current.some((message) => message.id === streamMessageId)) {
+          return [...current, finalMessage]
+        }
+        return current.map((message) => (message.id === streamMessageId ? finalMessage : message))
+      })
       setFailedOutbound(null)
     } catch {
+      setMessages((current) => current.filter((message) => message.id !== streamMessageId))
       setFailedOutbound(outbound)
     } finally {
       sendingRef.current = false
@@ -458,7 +498,7 @@ export function CustomerChatPage() {
             </div>
           )}
 
-          {sending && (
+          {sending && !messages.some((message) => message.id.startsWith('stream-')) && (
             <div aria-live="polite" className="mt-4 mr-auto w-fit rounded-3xl rounded-bl-lg border border-slate-200 bg-white px-5 py-4 text-sm text-slate-500 shadow-sm">
               Finding a grounded answer…
             </div>

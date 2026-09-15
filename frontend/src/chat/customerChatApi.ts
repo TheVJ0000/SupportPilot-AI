@@ -211,6 +211,21 @@ function parseTurn(value: unknown): CustomerTurnResult {
   return value as unknown as CustomerTurnResult
 }
 
+interface TurnStreamEvent {
+  event: 'answer_delta' | 'complete'
+  delta?: string
+  result?: CustomerTurnResult
+}
+
+function parseTurnStreamEvent(value: unknown): TurnStreamEvent {
+  if (!isRecord(value)) throw new CustomerChatApiError('unavailable')
+  if (value.event === 'answer_delta' && typeof value.delta === 'string' && value.delta.length > 0) {
+    return { event: 'answer_delta', delta: value.delta }
+  }
+  if (value.event === 'complete') return { event: 'complete', result: parseTurn(value.result) }
+  throw new CustomerChatApiError('unavailable')
+}
+
 function parseFeedback(value: unknown): CustomerFeedbackResult {
   if (
     !isRecord(value) ||
@@ -302,6 +317,67 @@ export async function submitCustomerTurn(
     },
   )
   return parseTurn(await readResponse(response))
+}
+
+export async function streamCustomerTurn(
+  conversationId: string,
+  sessionToken: string,
+  clientMessageId: string,
+  message: string,
+  onDelta: (delta: string) => void,
+): Promise<CustomerTurnResult> {
+  const response = await safeFetch(
+    `${apiBaseUrl}/api/chat/conversations/${encodeURIComponent(conversationId)}/turns/stream`,
+    {
+      method: 'POST',
+      headers: {
+        Accept: 'application/x-ndjson',
+        'Content-Type': 'application/json',
+        [CUSTOMER_SESSION_HEADER]: sessionToken,
+      },
+      body: JSON.stringify({ client_message_id: clientMessageId, message }),
+    },
+  )
+  if (response.status === 401) throw new CustomerChatApiError('invalid-session')
+  if (!response.ok || response.body === null) throw new CustomerChatApiError('unavailable')
+
+  const reader = response.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+  let completed: CustomerTurnResult | null = null
+
+  const consumeLine = (line: string): void => {
+    if (!line) return
+    let decoded: unknown
+    try {
+      decoded = JSON.parse(line)
+    } catch {
+      throw new CustomerChatApiError('unavailable')
+    }
+    const event = parseTurnStreamEvent(decoded)
+    if (completed !== null) throw new CustomerChatApiError('unavailable')
+    if (event.event === 'answer_delta') onDelta(event.delta!)
+    else completed = event.result!
+  }
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read()
+      buffer += decoder.decode(value, { stream: !done })
+      const lines = buffer.split('\n')
+      buffer = lines.pop() ?? ''
+      lines.forEach(consumeLine)
+      if (done) break
+    }
+    consumeLine(buffer)
+  } catch (error) {
+    if (error instanceof CustomerChatApiError) throw error
+    throw new CustomerChatApiError('unavailable')
+  } finally {
+    reader.releaseLock()
+  }
+  if (completed === null) throw new CustomerChatApiError('unavailable')
+  return completed
 }
 
 export async function setCustomerMessageFeedback(
