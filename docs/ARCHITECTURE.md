@@ -131,6 +131,10 @@ flowchart LR
     FALLBACK --> ESC[Optional Human Escalation Path]
 ```
 
+Phase 4A implements only the first three retrieval steps. The provider abstraction formats document chunks as `title: {title} | text: {content}` and questions as `task: question answering | query: {question}` for Gemini Embedding 2, with both sides fixed at 768 dimensions. The protected `/api/rag/retrieve` diagnostic endpoint normalizes a 2–2,000 character question, embeds it once, and calls a single user-JWT-scoped Supabase RPC.
+
+The SQL function verifies workspace membership before searching and includes workspace, `ready` status, non-null vector, provider, model, and dimension compatibility in the ranked query itself. It orders by cosine distance using the existing HNSW index, defaults to eight matches, caps requests at twelve, and returns `1 - cosine_distance` with citation-ready content and unchanged locators. Raw embeddings remain outside the response and ordinary column grants. No answerability threshold is hard-coded because later RAG evaluation must calibrate it; Phase 4B still owns evidence evaluation and grounded generation.
+
 ### Question-answering principles
 
 The normal support Q&A path is RAG, not an autonomous agent.
@@ -193,4 +197,4 @@ Generation and embeddings should be called through application interfaces rather
 
 ## Database scope
 
-Phase 3C completes the Phase 3 ingestion code with explicit extraction/indexing lifecycle metadata, replaceable embeddings, 768-dimensional pgvector storage, and one cosine HNSW index. Similarity-search functions, RAG retrieval, conversations, messages, feedback, escalations, analytics, and their later-stage policies remain deferred.
+Phase 3C completes ingestion with explicit lifecycle metadata, replaceable embeddings, 768-dimensional pgvector storage, and one cosine HNSW index. Phase 4A adds authenticated workspace-scoped semantic retrieval and citation-ready evidence. Answer generation, answerability policy, conversations, messages, feedback, escalations, analytics, and their later-stage policies remain deferred.

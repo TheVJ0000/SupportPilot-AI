@@ -48,7 +48,7 @@ The current development machine had neither Docker nor the Supabase CLI, so the 
 
 **Status:** Complete in application code and automated backend/frontend suites. Phase 3A provides private source storage and recovery; Phase 3B provides hostile-file validation, extraction, normalization, deterministic citation chunks, and atomic replacement; Phase 3C adds explicit stage-aware retries, a source-ID-only indexing endpoint, a replaceable Gemini embedding provider, validated bounded batches, 768-dimensional pgvector storage, content-hash integrity checks, atomic completion, and cosine HNSW indexing. Owners/admins manage ingestion, members remain read-only, and non-members have no access.
 
-The local machine still has neither Docker nor the Supabase CLI, so the pgTAP migrations/security suite and real hosted Supabase/Gemini smoke test remain environment-dependent checks. Phase 4 retrieval and RAG have not begun. General two-resource deletion remains deferred to avoid a misleading partial-delete workflow.
+The local machine still has neither Docker nor the Supabase CLI, so the pgTAP migrations/security suite and real hosted Supabase/Gemini smoke test remain environment-dependent checks. Phase 4A now builds on this indexed corpus. General two-resource deletion remains deferred to avoid a misleading partial-delete workflow.
 
 **Completion criteria:**
 
@@ -63,6 +63,8 @@ The local machine still has neither Docker nor the Supabase CLI, so the pgTAP mi
 ## Phase 4 — RAG support engine
 
 **Objective:** Build the grounded support-answering engine that retrieves relevant workspace evidence, checks answerability, generates responses, and returns citations.
+
+**Current progress:** Phase 4A implements the secure retrieval foundation only. It normalizes bounded questions, uses the Gemini Embedding 2 question-answering format at 768 dimensions, searches inside the authorized workspace with exact provider/model/dimension compatibility, and returns eight best-first cosine matches with citation metadata. No answerability threshold or generated answer exists yet; those remain Phase 4B work.
 
 **Completion criteria:**
 

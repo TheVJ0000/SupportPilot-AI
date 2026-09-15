@@ -117,5 +117,5 @@ async def test_missing_gemini_configuration_is_safe_and_does_not_crash_app() -> 
         )
 
     assert response.status_code == 503
-    assert response.json() == {"detail": "AI indexing is not configured yet."}
+    assert response.json() == {"detail": "AI embedding services are not configured yet."}
     assert "GEMINI_API_KEY" not in response.text

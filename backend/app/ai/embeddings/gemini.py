@@ -43,6 +43,11 @@ class GeminiEmbeddingProvider:
         return types.Content(parts=[types.Part(text=prepared)])
 
     @staticmethod
+    def _query_content(query: str) -> types.Content:
+        prepared = f"task: question answering | query: {query}"
+        return types.Content(parts=[types.Part(text=prepared)])
+
+    @staticmethod
     def _status_code(error: Exception) -> int | None:
         for attribute in ("code", "status_code"):
             value = getattr(error, attribute, None)
@@ -61,13 +66,13 @@ class GeminiEmbeddingProvider:
             return "embedding_provider_unavailable", True
         return "embedding_failed", False
 
-    async def _embed_batch(self, batch: list[EmbeddingDocument]) -> list[list[float]]:
+    async def _embed_contents(self, contents: list[types.Content]) -> list[list[float]]:
         response: Any = None
         for attempt in range(MAX_RETRIES + 1):
             try:
                 response = await self._client.aio.models.embed_content(
                     model=self.model_name,
-                    contents=[self._document_content(document) for document in batch],
+                    contents=contents,
                     config=types.EmbedContentConfig(output_dimensionality=self.dimension),
                 )
                 break
@@ -79,7 +84,7 @@ class GeminiEmbeddingProvider:
                 raise EmbeddingProviderError(error_code) from None
 
         embeddings = getattr(response, "embeddings", None)
-        if not isinstance(embeddings, list) or len(embeddings) != len(batch):
+        if not isinstance(embeddings, list) or len(embeddings) != len(contents):
             raise EmbeddingProviderError("embedding_invalid_response")
 
         validated: list[list[float]] = []
@@ -98,6 +103,9 @@ class GeminiEmbeddingProvider:
             validated.append(vector)
         return validated
 
+    async def _embed_batch(self, batch: list[EmbeddingDocument]) -> list[list[float]]:
+        return await self._embed_contents([self._document_content(document) for document in batch])
+
     async def embed_documents(self, documents: list[EmbeddingDocument]) -> list[list[float]]:
         if not documents or any(not document.text.strip() for document in documents):
             raise EmbeddingProviderError("embedding_invalid_response")
@@ -105,3 +113,9 @@ class GeminiEmbeddingProvider:
         for offset in range(0, len(documents), self._batch_size):
             vectors.extend(await self._embed_batch(documents[offset : offset + self._batch_size]))
         return vectors
+
+    async def embed_query(self, query: str) -> list[float]:
+        if not query.strip():
+            raise EmbeddingProviderError("embedding_invalid_response")
+        vectors = await self._embed_contents([self._query_content(query)])
+        return vectors[0]

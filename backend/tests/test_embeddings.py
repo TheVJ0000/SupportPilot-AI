@@ -133,3 +133,56 @@ async def test_transient_retry_is_bounded_and_can_recover() -> None:
 
     assert len(result) == 1
     assert sleeps == [0.25, 0.5]
+
+
+@pytest.mark.anyio
+async def test_query_uses_exact_question_answering_format_and_dimension() -> None:
+    client = FakeClient([response(1)])
+
+    vector = await provider(client).embed_query("How do I reset my password?")
+
+    call = client.models.calls[0]
+    assert call["model"] == "gemini-embedding-2"
+    assert call["config"].output_dimensionality == 768
+    assert [item.parts[0].text for item in call["contents"]] == [
+        "task: question answering | query: How do I reset my password?"
+    ]
+    assert len(vector) == 768
+
+
+@pytest.mark.anyio
+async def test_query_rejects_blank_and_invalid_vectors() -> None:
+    blank_client = FakeClient([])
+    with pytest.raises(EmbeddingProviderError, match="embedding_invalid_response"):
+        await provider(blank_client).embed_query("   ")
+    assert blank_client.models.calls == []
+
+    for invalid_response in (
+        response(2),
+        response(1, 767),
+        response(1, value=float("nan")),
+        response(1, value=float("inf")),
+    ):
+        with pytest.raises(EmbeddingProviderError, match="embedding_invalid_response"):
+            await provider(FakeClient([invalid_response])).embed_query("Synthetic question")
+
+
+@pytest.mark.anyio
+async def test_query_rate_limit_retries_are_bounded_and_sanitized() -> None:
+    client = FakeClient([ProviderFailure(429, "secret key and provider payload")] * 3)
+
+    with pytest.raises(EmbeddingProviderError, match="embedding_rate_limited") as caught:
+        await provider(client).embed_query("Synthetic question")
+
+    assert len(client.models.calls) == 3
+    assert "secret" not in str(caught.value)
+
+
+@pytest.mark.anyio
+async def test_query_auth_failure_does_not_retry() -> None:
+    client = FakeClient([ProviderFailure(401, "private credential detail")])
+
+    with pytest.raises(EmbeddingProviderError, match="embedding_auth_failed"):
+        await provider(client).embed_query("Synthetic question")
+
+    assert len(client.models.calls) == 1

@@ -13,7 +13,7 @@ def get_embedding_provider(
     if settings.gemini_api_key is None:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="AI indexing is not configured yet.",
+            detail="AI embedding services are not configured yet.",
         )
     return GeminiEmbeddingProvider(
         api_key=settings.gemini_api_key.get_secret_value(),

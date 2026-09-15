@@ -24,7 +24,7 @@ SupportPilot AI is a full-stack Generative AI customer-support platform being bu
 
 ## Current status
 
-**Phase 3C — secure knowledge indexing.** Owners/admins can upload and extract PDF, DOCX, TXT, Markdown, and FAQ sources, then explicitly index trusted chunks through authenticated FastAPI. A replaceable provider boundary uses Gemini Embedding 2 at 768 dimensions, validates bounded batches, and atomically stores vectors in pgvector only when every chunk hash and vector is valid. Extraction and indexing failures have distinct retry paths; members remain read-only. Phase 4 retrieval/RAG, generation, chat, agents, deployment, and reliable general source deletion remain intentionally deferred.
+**Phase 4A — secure semantic retrieval foundation.** Authenticated workspace members can submit a validated diagnostic question to FastAPI, which creates one Gemini Embedding 2 query vector and calls a membership-protected, workspace-filtered pgvector RPC. The database searches only compatible `ready` sources and returns up to eight best-first cosine matches with unchanged citation locators and no raw vectors. Phase 4B grounded answer generation, customer chat, agents, deployment, and reliable general source deletion remain intentionally deferred.
 
 The initial portfolio-development and public-demo target is **₹0 / $0 infrastructure and AI cost**, using suitable free tiers and replaceable providers.
 
