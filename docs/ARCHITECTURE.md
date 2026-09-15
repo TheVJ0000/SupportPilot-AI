@@ -145,7 +145,9 @@ The model may return only `answerable` with a bounded answer and request-local e
 flowchart LR
     ID[Unpredictable public chat ID] --> SESSION[Opaque seven-day customer session]
     SESSION --> TURN[Idempotent persistent customer turn]
-    TURN --> RET[Session-scoped knowledge retrieval]
+    TURN --> CONTEXT[Bounded recent persisted context plus current question]
+    CONTEXT --> EMBED[One query embedding]
+    EMBED --> RET[Session-scoped knowledge retrieval]
     RET --> RAG[Existing grounded RAG engine]
     RAG --> SAVE[Atomic answer and citation snapshot]
     SAVE --> HISTORY[Conversation history API]
@@ -164,7 +166,9 @@ The turn-start RPC creates the processing turn and normalized customer message a
 
 Phase 5B.1 adds the public `/chat/:publicId` React route outside the business authentication boundary. A dedicated frontend API client calls only session creation, conversation history, and turn submission through FastAPI; the opaque token is sent only through `X-SupportPilot-Session`. A public-ID-namespaced local-storage record contains only public ID, conversation ID, session token, expiry, and workspace name. Messages are always restored from server history rather than cached locally. Expired or rejected sessions are cleared and recreated once, while ambiguous turn failures retain the original `client_message_id` for an explicit Retry action.
 
-The hosted UI renders all customer, assistant, and citation text as plain text. Citation locations support PDF pages, DOCX blocks, text/Markdown lines, and FAQs without inventing source URLs. Phase 5 remains non-streaming; conversation-aware context, feedback, and human-request experience are still deferred.
+Phase 5B.2 loads authoritative history only after a new or failed-retry turn begins, verifies that its final message is the normalized current customer question, and excludes exactly that message from prior context. A deterministic helper adds at most the six immediately preceding messages, newest-first within the existing 2,000-character budget, then presents selected messages chronologically with the complete current question. The composed string is used only for the existing query embedding and grounded generation path: it is never accepted from the browser, persisted, logged, returned, or produced by an extra Gemini rewrite call. Conversation text may clarify references, but it remains untrusted and cannot support factual claims or citations; only retrieved Knowledge Base chunks are evidence.
+
+The hosted UI renders all customer, assistant, and citation text as plain text. Citation locations support PDF pages, DOCX blocks, text/Markdown lines, and FAQs without inventing source URLs. Phase 5 remains non-streaming; feedback and human-request experience are still deferred.
 
 ### Question-answering principles
 

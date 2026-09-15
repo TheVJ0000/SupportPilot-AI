@@ -72,9 +72,11 @@ class FakeGenerationProvider:
         )
         self.error = error
         self.calls = 0
+        self.questions: list[str] = []
 
     async def generate_grounded_answer(self, question, evidence):
         self.calls += 1
+        self.questions.append(question)
         assert question
         assert [item.evidence_id for item in evidence] == [
             f"E{index}" for index in range(1, len(evidence) + 1)
@@ -89,6 +91,8 @@ class FakeCustomerChatGateway:
         self,
         retrieval_gateway: FakeRetrievalGateway | None = None,
         started: StartedCustomerTurn | None = None,
+        *,
+        persist_current: bool = True,
     ) -> None:
         self.retrieval = retrieval_gateway or FakeRetrievalGateway()
         self.started = started or StartedCustomerTurn(
@@ -102,19 +106,13 @@ class FakeCustomerChatGateway:
         self.begin_calls = []
         self.complete_calls = []
         self.fail_calls = []
+        self.history_calls = 0
+        self.persist_current = persist_current
         self.persisted: PersistedCustomerTurn | None = None
         self.history = CustomerConversationResponse(
             conversation_id=CONVERSATION_ID,
             status="open",
-            messages=[
-                CustomerHistoryMessage(
-                    id=UUID("90000000-0000-4000-8000-000000000001"),
-                    role="customer",
-                    content="Question?",
-                    created_at=NOW,
-                    citations=[],
-                )
-            ],
+            messages=[],
         )
 
     async def create_session(self, public_id, token_hash, expires_at):
@@ -129,6 +127,20 @@ class FakeCustomerChatGateway:
 
     async def begin_turn(self, conversation_id, token_hash, client_message_id, message):
         self.begin_calls.append((conversation_id, token_hash, client_message_id, message))
+        if self.persist_current and (
+            not self.history.messages
+            or self.history.messages[-1].role != "customer"
+            or self.history.messages[-1].content != message
+        ):
+            self.history.messages.append(
+                CustomerHistoryMessage(
+                    id=UUID("90000000-0000-4000-8000-000000000001"),
+                    role="customer",
+                    content=message,
+                    created_at=NOW,
+                    citations=[],
+                )
+            )
         return self.started
 
     def retrieval_gateway(self, conversation_id, token_hash, workspace_id):
@@ -172,6 +184,7 @@ class FakeCustomerChatGateway:
 
     async def get_conversation(self, conversation_id, token_hash):
         assert (conversation_id, token_hash) == (CONVERSATION_ID, TOKEN_HASH)
+        self.history_calls += 1
         return self.history
 
 
@@ -297,6 +310,7 @@ async def test_completed_retry_returns_persisted_result_without_ai_calls() -> No
     assert embedding.calls == []
     assert generation.calls == 0
     assert gateway.complete_calls == []
+    assert gateway.history_calls == 0
 
 
 @pytest.mark.anyio
@@ -333,6 +347,22 @@ async def test_failed_turn_retry_reprocesses_the_existing_turn_once() -> None:
     )
     retrieval = FakeRetrievalGateway(matches=[retrieved_chunk()])
     gateway = FakeCustomerChatGateway(retrieval, started=retried)
+    gateway.history.messages = [
+        CustomerHistoryMessage(
+            id=UUID("90000000-0000-4000-8000-000000000002"),
+            role="assistant",
+            content="Earlier answer.",
+            created_at=NOW,
+            citations=[],
+        ),
+        CustomerHistoryMessage(
+            id=UUID("90000000-0000-4000-8000-000000000001"),
+            role="customer",
+            content="Question?",
+            created_at=NOW,
+            citations=[],
+        ),
+    ]
     embedding = FakeEmbeddingProvider()
     generation = FakeGenerationProvider()
 
@@ -344,8 +374,12 @@ async def test_failed_turn_retry_reprocesses_the_existing_turn_once() -> None:
 
     assert result.turn_id == TURN_ID
     assert len(gateway.begin_calls) == 1
-    assert embedding.calls == ["Question?"]
+    assert embedding.calls == [
+        "Previous assistant: Earlier answer. Current customer question: Question?"
+    ]
     assert generation.calls == 1
+    assert generation.questions[0].count("Current customer question: Question?") == 1
+    assert len(gateway.history.messages) == 2
     assert len(gateway.complete_calls) == 1
     assert gateway.fail_calls == []
 
@@ -408,6 +442,15 @@ async def test_invalid_or_expired_session_error_is_safe() -> None:
 @pytest.mark.anyio
 async def test_history_is_returned_in_gateway_order_without_session_metadata() -> None:
     gateway = FakeCustomerChatGateway()
+    gateway.history.messages = [
+        CustomerHistoryMessage(
+            id=UUID("90000000-0000-4000-8000-000000000001"),
+            role="customer",
+            content="Question?",
+            created_at=NOW,
+            citations=[],
+        )
+    ]
 
     history = await CustomerChatService(gateway).get_conversation(CONVERSATION_ID, TOKEN_HASH)
 
@@ -415,3 +458,92 @@ async def test_history_is_returned_in_gateway_order_without_session_metadata() -
     serialized = history.model_dump_json()
     assert "token" not in serialized
     assert "embedding" not in serialized
+
+
+@pytest.mark.anyio
+async def test_new_turn_uses_trusted_history_once_but_persists_original_question() -> None:
+    retrieval = FakeRetrievalGateway(matches=[retrieved_chunk()])
+    gateway = FakeCustomerChatGateway(retrieval)
+    gateway.history.messages = [
+        CustomerHistoryMessage(
+            id=UUID("90000000-0000-4000-8000-000000000002"),
+            role="customer",
+            content="What is your refund policy?",
+            created_at=NOW,
+            citations=[],
+        ),
+        CustomerHistoryMessage(
+            id=UUID("90000000-0000-4000-8000-000000000003"),
+            role="assistant",
+            content="Refunds are available within 30 days.",
+            created_at=NOW,
+            citations=[],
+        ),
+    ]
+    embedding = FakeEmbeddingProvider()
+    generation = FakeGenerationProvider()
+
+    await CustomerChatService(
+        gateway,
+        embedding_provider=embedding,
+        generation_provider=generation,
+    ).submit_turn(
+        CONVERSATION_ID,
+        TOKEN_HASH,
+        CLIENT_MESSAGE_ID,
+        "  What about after that?  ",
+    )
+
+    contextual = (
+        "Previous customer: What is your refund policy? "
+        "Previous assistant: Refunds are available within 30 days. "
+        "Current customer question: What about after that?"
+    )
+    assert gateway.history_calls == 1
+    assert gateway.begin_calls[0][3] == "What about after that?"
+    assert gateway.history.messages[-1].content == "What about after that?"
+    assert embedding.calls == [contextual]
+    assert retrieval.calls == 1
+    assert generation.questions == [contextual]
+    assert all(call[3] != contextual for call in gateway.begin_calls)
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("final_role", "final_content"),
+    [
+        ("assistant", "Not the current customer message."),
+        ("customer", "A different customer question."),
+    ],
+)
+async def test_unexpected_final_history_message_fails_before_ai(
+    final_role: str,
+    final_content: str,
+) -> None:
+    gateway = FakeCustomerChatGateway(
+        FakeRetrievalGateway(matches=[retrieved_chunk()]),
+        persist_current=False,
+    )
+    gateway.history.messages = [
+        CustomerHistoryMessage(
+            id=UUID("90000000-0000-4000-8000-000000000002"),
+            role=final_role,
+            content=final_content,
+            created_at=NOW,
+            citations=[],
+        )
+    ]
+    embedding = FakeEmbeddingProvider()
+    generation = FakeGenerationProvider()
+
+    with pytest.raises(CustomerChatHttpError) as caught:
+        await CustomerChatService(
+            gateway,
+            embedding_provider=embedding,
+            generation_provider=generation,
+        ).submit_turn(CONVERSATION_ID, TOKEN_HASH, CLIENT_MESSAGE_ID, "Question?")
+
+    assert caught.value.status_code == 502
+    assert gateway.fail_calls == [(TURN_ID, TOKEN_HASH, "retrieval_failed")]
+    assert embedding.calls == []
+    assert generation.calls == 0

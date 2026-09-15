@@ -5,6 +5,7 @@ from uuid import UUID
 
 from app.ai.embeddings.base import EmbeddingProvider
 from app.ai.generation.base import GenerationProvider
+from app.chat.context import build_contextual_question
 from app.chat.errors import CustomerChatGatewayError, CustomerChatHttpError
 from app.chat.gateway import CustomerChatGateway
 from app.chat.models import (
@@ -157,6 +158,38 @@ class CustomerChatService:
                 HTTPStatus.CONFLICT,
             )
 
+        try:
+            conversation = await self._gateway.get_conversation(
+                conversation_id,
+                token_hash,
+            )
+            if conversation.conversation_id != conversation_id or not conversation.messages:
+                raise ValueError("Unexpected customer conversation state")
+            current_message = conversation.messages[-1]
+            if (
+                current_message.role != "customer"
+                or normalize_question(current_message.content, minimum_chars=1)
+                != normalized_message
+            ):
+                raise ValueError("Unexpected current customer message")
+            contextual_question = build_contextual_question(
+                normalized_message,
+                conversation.messages[:-1],
+            )
+        except (RetrievalHttpError, ValueError) as error:
+            await self._fail_turn_safely(started.turn_id, token_hash, "retrieval_failed")
+            raise CustomerChatHttpError(
+                "The customer conversation could not be read safely.",
+                HTTPStatus.BAD_GATEWAY,
+            ) from error
+        except CustomerChatGatewayError as error:
+            await self._fail_turn_safely(
+                started.turn_id,
+                token_hash,
+                "temporarily_unavailable",
+            )
+            raise _gateway_http_error(error) from error
+
         retrieval_gateway = self._gateway.retrieval_gateway(
             conversation_id,
             token_hash,
@@ -172,7 +205,7 @@ class CustomerChatService:
             answer = await RagAnswerService(
                 retrieval_service,
                 self._generation_provider,
-            ).answer(started.workspace_id, normalized_message)
+            ).answer(started.workspace_id, contextual_question)
             await self._gateway.complete_turn(
                 started.turn_id,
                 token_hash,

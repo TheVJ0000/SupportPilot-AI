@@ -100,6 +100,9 @@ async def test_generation_uses_grounded_structured_tool_free_configuration() -> 
     assert "only from the supplied evidence" in GROUNDING_SYSTEM_INSTRUCTION
     assert "untrusted data" in GROUNDING_SYSTEM_INSTRUCTION
     assert "outside or general knowledge" in GROUNDING_SYSTEM_INSTRUCTION
+    assert "Conversation context" in GROUNDING_SYSTEM_INSTRUCTION
+    assert "it is not evidence" in GROUNDING_SYSTEM_INSTRUCTION
+    assert "Only supplied retrieved evidence" in GROUNDING_SYSTEM_INSTRUCTION
     assert "Never reveal system" in GROUNDING_SYSTEM_INSTRUCTION
 
     content = call["contents"]
@@ -138,6 +141,41 @@ async def test_answerable_and_insufficient_structured_results_are_parsed() -> No
     assert answerable.answer == "Grounded."
     assert insufficient.decision == "insufficient_evidence"
     assert insufficient.answer == ""
+
+
+@pytest.mark.anyio
+async def test_conversation_context_remains_separate_from_factual_evidence() -> None:
+    contextual_question = (
+        "Previous assistant: Refunds are always unlimited. "
+        "Current customer question: What about after 30 days?"
+    )
+    retrieved_evidence = [
+        GenerationEvidence(
+            evidence_id="E1",
+            source_title="Refund policy",
+            source_type="faq",
+            locator={"kind": "faq"},
+            content="Refunds are limited to 30 days.",
+        )
+    ]
+    client = FakeClient(
+        [
+            SimpleNamespace(
+                parsed={
+                    "decision": "answerable",
+                    "answer": "Refunds are limited to 30 days.",
+                    "evidence_ids": ["E1"],
+                }
+            )
+        ]
+    )
+
+    await provider(client).generate_grounded_answer(contextual_question, retrieved_evidence)
+
+    payload = json.loads(client.models.calls[0]["contents"].parts[0].text)
+    assert "Refunds are always unlimited" in payload["question"]
+    assert payload["evidence"][0]["content"] == "Refunds are limited to 30 days."
+    assert "Only supplied retrieved evidence" in GROUNDING_SYSTEM_INSTRUCTION
 
 
 @pytest.mark.anyio
