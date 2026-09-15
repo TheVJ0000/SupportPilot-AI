@@ -41,7 +41,24 @@ function isKnowledgeSource(value: unknown): value is KnowledgeSource {
     'original_filename' in value &&
     (value.original_filename === null || typeof value.original_filename === 'string') &&
     'created_at' in value &&
-    typeof value.created_at === 'string'
+    typeof value.created_at === 'string' &&
+    'processing_started_at' in value &&
+    (value.processing_started_at === null || typeof value.processing_started_at === 'string') &&
+    'processing_attempts' in value &&
+    typeof value.processing_attempts === 'number' &&
+    Number.isInteger(value.processing_attempts) &&
+    value.processing_attempts >= 0 &&
+    'extracted_at' in value &&
+    (value.extracted_at === null || typeof value.extracted_at === 'string') &&
+    'extracted_char_count' in value &&
+    (value.extracted_char_count === null ||
+      (typeof value.extracted_char_count === 'number' && value.extracted_char_count >= 0)) &&
+    'chunk_count' in value &&
+    typeof value.chunk_count === 'number' &&
+    Number.isInteger(value.chunk_count) &&
+    value.chunk_count >= 0 &&
+    'last_error_code' in value &&
+    (value.last_error_code === null || typeof value.last_error_code === 'string')
   )
 }
 
@@ -63,7 +80,9 @@ function readUploadInitialization(value: unknown): { sourceId: string; storagePa
 export async function listKnowledgeSources(workspaceId: string): Promise<KnowledgeSource[]> {
   const { data, error } = await getSupabaseClient()
     .from('knowledge_sources')
-    .select('id,title,source_type,status,original_filename,created_at')
+    .select(
+      'id,title,source_type,status,original_filename,created_at,processing_started_at,processing_attempts,extracted_at,extracted_char_count,chunk_count,last_error_code',
+    )
     .eq('workspace_id', workspaceId)
     .order('created_at', { ascending: false })
 

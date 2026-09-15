@@ -1,11 +1,13 @@
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { KnowledgeProcessingError } from '../knowledge/processingApi'
 import { KnowledgePage } from './KnowledgePage'
 
 const mocks = vi.hoisted(() => ({
   addFaq: vi.fn(),
   recoverUpload: vi.fn(),
+  processSource: vi.fn(),
   refresh: vi.fn(),
   uploadFile: vi.fn(),
   useKnowledgeSources: vi.fn(),
@@ -36,6 +38,7 @@ describe('KnowledgePage', () => {
       uploadFile: mocks.uploadFile,
       addFaq: mocks.addFaq,
       recoverUpload: mocks.recoverUpload,
+      processSource: mocks.processSource,
     })
   })
 
@@ -66,6 +69,7 @@ describe('KnowledgePage', () => {
       uploadFile: mocks.uploadFile,
       addFaq: mocks.addFaq,
       recoverUpload: mocks.recoverUpload,
+      processSource: mocks.processSource,
     })
 
     render(<KnowledgePage />)
@@ -73,7 +77,7 @@ describe('KnowledgePage', () => {
     expect(screen.getByRole('heading', { name: 'Support Guide' })).toBeInTheDocument()
     expect(screen.getByText(/support-guide\.pdf/i)).toBeInTheDocument()
     expect(screen.getByText('file')).toBeInTheDocument()
-    expect(screen.getByText('pending')).toBeInTheDocument()
+    expect(screen.getByText('Pending processing')).toBeInTheDocument()
   })
 
   it('submits a manual FAQ through the knowledge state abstraction', async () => {
@@ -128,6 +132,7 @@ describe('KnowledgePage', () => {
       uploadFile: mocks.uploadFile,
       addFaq: mocks.addFaq,
       recoverUpload: mocks.recoverUpload,
+      processSource: mocks.processSource,
     })
 
     render(<KnowledgePage />)
@@ -161,10 +166,239 @@ describe('KnowledgePage', () => {
       uploadFile: mocks.uploadFile,
       addFaq: mocks.addFaq,
       recoverUpload: mocks.recoverUpload,
+      processSource: mocks.processSource,
     })
 
     render(<KnowledgePage />)
 
     expect(screen.queryByRole('button', { name: /recover upload/i })).not.toBeInTheDocument()
+  })
+
+  it('shows process actions to owners and admins but not members', () => {
+    mocks.useKnowledgeSources.mockReturnValue({
+      sources: [
+        {
+          id: '30000000-0000-0000-0000-000000000001',
+          title: 'Pending guide',
+          source_type: 'file',
+          status: 'pending',
+          original_filename: 'guide.pdf',
+          created_at: '2026-09-15T00:00:00Z',
+          extracted_at: null,
+        },
+      ],
+      loading: false,
+      error: null,
+      refresh: mocks.refresh,
+      uploadFile: mocks.uploadFile,
+      addFaq: mocks.addFaq,
+      recoverUpload: mocks.recoverUpload,
+      processSource: mocks.processSource,
+    })
+
+    const { unmount } = render(<KnowledgePage />)
+    expect(screen.getByRole('button', { name: /process source/i })).toBeInTheDocument()
+    unmount()
+
+    mocks.useWorkspace.mockReturnValue({
+      selectedWorkspace: { ...WORKSPACE, role: 'admin' },
+      loading: false,
+    })
+    const adminView = render(<KnowledgePage />)
+    expect(screen.getByRole('button', { name: /process source/i })).toBeInTheDocument()
+    adminView.unmount()
+
+    mocks.useWorkspace.mockReturnValue({
+      selectedWorkspace: { ...WORKSPACE, role: 'member' },
+      loading: false,
+    })
+    render(<KnowledgePage />)
+    expect(screen.queryByRole('button', { name: /process source/i })).not.toBeInTheDocument()
+  })
+
+  it('shows retry processing for a failed source', () => {
+    mocks.useKnowledgeSources.mockReturnValue({
+      sources: [
+        {
+          id: '30000000-0000-0000-0000-000000000001',
+          title: 'Failed guide',
+          source_type: 'file',
+          status: 'failed',
+          original_filename: 'guide.pdf',
+          created_at: '2026-09-15T00:00:00Z',
+          extracted_at: null,
+        },
+      ],
+      loading: false,
+      error: null,
+      refresh: mocks.refresh,
+      uploadFile: mocks.uploadFile,
+      addFaq: mocks.addFaq,
+      recoverUpload: mocks.recoverUpload,
+      processSource: mocks.processSource,
+    })
+
+    render(<KnowledgePage />)
+
+    expect(screen.getByText('Processing failed')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /retry processing/i })).toBeInTheDocument()
+  })
+
+  it('processes a pending source once and reports the safe result', async () => {
+    const user = userEvent.setup()
+    mocks.processSource.mockResolvedValue({
+      sourceId: '30000000-0000-0000-0000-000000000001',
+      status: 'pending',
+      chunkCount: 2,
+      extractedCharCount: 2400,
+      nextStage: 'embedding',
+    })
+    mocks.useKnowledgeSources.mockReturnValue({
+      sources: [
+        {
+          id: '30000000-0000-0000-0000-000000000001',
+          title: 'Pending guide',
+          source_type: 'file',
+          status: 'pending',
+          original_filename: 'guide.pdf',
+          created_at: '2026-09-15T00:00:00Z',
+          extracted_at: null,
+        },
+      ],
+      loading: false,
+      error: null,
+      refresh: mocks.refresh,
+      uploadFile: mocks.uploadFile,
+      addFaq: mocks.addFaq,
+      recoverUpload: mocks.recoverUpload,
+      processSource: mocks.processSource,
+    })
+
+    render(<KnowledgePage />)
+    await user.click(screen.getByRole('button', { name: /process source/i }))
+
+    expect(mocks.processSource).toHaveBeenCalledTimes(1)
+    expect(await screen.findByText(/extracted into 2 chunks and is awaiting indexing/i)).toBeInTheDocument()
+  })
+
+  it('disables processing actions while a request is active', async () => {
+    const user = userEvent.setup()
+    mocks.processSource.mockReturnValue(new Promise(() => undefined))
+    mocks.useKnowledgeSources.mockReturnValue({
+      sources: [
+        {
+          id: '30000000-0000-0000-0000-000000000001',
+          title: 'Pending guide',
+          source_type: 'file',
+          status: 'pending',
+          original_filename: 'guide.pdf',
+          created_at: '2026-09-15T00:00:00Z',
+          extracted_at: null,
+        },
+      ],
+      loading: false,
+      error: null,
+      refresh: mocks.refresh,
+      uploadFile: mocks.uploadFile,
+      addFaq: mocks.addFaq,
+      recoverUpload: mocks.recoverUpload,
+      processSource: mocks.processSource,
+    })
+
+    render(<KnowledgePage />)
+    await user.click(screen.getByRole('button', { name: /process source/i }))
+
+    expect(screen.getByRole('button', { name: /processing/i })).toBeDisabled()
+    expect(mocks.processSource).toHaveBeenCalledTimes(1)
+  })
+
+  it('shows a safe failure without raw parser details', async () => {
+    const user = userEvent.setup()
+    mocks.processSource.mockRejectedValue(new Error('raw parser stack and private provider path'))
+    mocks.useKnowledgeSources.mockReturnValue({
+      sources: [
+        {
+          id: '30000000-0000-0000-0000-000000000001',
+          title: 'Pending guide',
+          source_type: 'file',
+          status: 'pending',
+          original_filename: 'guide.pdf',
+          created_at: '2026-09-15T00:00:00Z',
+          extracted_at: null,
+        },
+      ],
+      loading: false,
+      error: null,
+      refresh: mocks.refresh,
+      uploadFile: mocks.uploadFile,
+      addFaq: mocks.addFaq,
+      recoverUpload: mocks.recoverUpload,
+      processSource: mocks.processSource,
+    })
+
+    render(<KnowledgePage />)
+    await user.click(screen.getByRole('button', { name: /process source/i }))
+
+    expect(await screen.findByText(/could not be processed safely/i)).toBeInTheDocument()
+    expect(screen.queryByText(/raw parser|private provider/i)).not.toBeInTheDocument()
+  })
+
+  it('shows extracted pending sources as awaiting indexing', () => {
+    mocks.useKnowledgeSources.mockReturnValue({
+      sources: [
+        {
+          id: '30000000-0000-0000-0000-000000000001',
+          title: 'Extracted guide',
+          source_type: 'file',
+          status: 'pending',
+          original_filename: 'guide.pdf',
+          created_at: '2026-09-15T00:00:00Z',
+          extracted_at: '2026-09-15T01:00:00Z',
+        },
+      ],
+      loading: false,
+      error: null,
+      refresh: mocks.refresh,
+      uploadFile: mocks.uploadFile,
+      addFaq: mocks.addFaq,
+      recoverUpload: mocks.recoverUpload,
+      processSource: mocks.processSource,
+    })
+
+    render(<KnowledgePage />)
+
+    expect(screen.getByText('Extracted · awaiting indexing')).toBeInTheDocument()
+  })
+
+  it('shows an approved processing error without altering it', async () => {
+    const user = userEvent.setup()
+    mocks.processSource.mockRejectedValue(
+      new KnowledgeProcessingError('Encrypted or password-protected PDFs are not supported.'),
+    )
+    mocks.useKnowledgeSources.mockReturnValue({
+      sources: [
+        {
+          id: '30000000-0000-0000-0000-000000000001',
+          title: 'Encrypted guide',
+          source_type: 'file',
+          status: 'failed',
+          original_filename: 'guide.pdf',
+          created_at: '2026-09-15T00:00:00Z',
+          extracted_at: null,
+        },
+      ],
+      loading: false,
+      error: null,
+      refresh: mocks.refresh,
+      uploadFile: mocks.uploadFile,
+      addFaq: mocks.addFaq,
+      recoverUpload: mocks.recoverUpload,
+      processSource: mocks.processSource,
+    })
+
+    render(<KnowledgePage />)
+    await user.click(screen.getByRole('button', { name: /retry processing/i }))
+
+    expect(await screen.findByText(/password-protected pdfs are not supported/i)).toBeInTheDocument()
   })
 })

@@ -58,13 +58,19 @@ describe('knowledge source operations', () => {
       status: 'pending',
       original_filename: 'guide.pdf',
       created_at: '2026-09-15T00:00:00Z',
+      processing_started_at: null,
+      processing_attempts: 0,
+      extracted_at: null,
+      extracted_char_count: null,
+      chunk_count: 0,
+      last_error_code: null,
     }
     mocks.order.mockResolvedValue({ data: [source], error: null })
 
     await expect(listKnowledgeSources(WORKSPACE_ID)).resolves.toEqual([source])
     expect(mocks.from).toHaveBeenCalledWith('knowledge_sources')
     expect(mocks.select).toHaveBeenCalledWith(
-      'id,title,source_type,status,original_filename,created_at',
+      'id,title,source_type,status,original_filename,created_at,processing_started_at,processing_attempts,extracted_at,extracted_char_count,chunk_count,last_error_code',
     )
     expect(mocks.eq).toHaveBeenCalledWith('workspace_id', WORKSPACE_ID)
     expect(mocks.order).toHaveBeenCalledWith('created_at', { ascending: false })

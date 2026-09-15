@@ -55,6 +55,10 @@ The migration must result in:
 - the `knowledge-files` bucket remaining private with a 10 MB file limit.
 - `recover_file_knowledge_source(uuid)` executable only by authenticated callers and authorizing only owners/admins of the source's derived workspace;
 - interrupted upload recovery checking the exact stored path, moving an existing object only to `pending`, or removing only an absent-object `uploading` row.
+- extraction lifecycle metadata constrained to safe counts and approved machine-readable error codes;
+- `knowledge_chunks` bound to its source workspace by a composite foreign key, readable only to workspace members, with no browser mutation grants;
+- extraction lifecycle RPCs deriving workspace and manager authorization from the locked source row;
+- completion validating the full chunk payload before atomic replacement and returning the source to `pending`, never `ready`.
 
 The pgTAP suite is in `supabase/tests/database/`. Local database tests require Docker and the Supabase CLI:
 
@@ -64,7 +68,7 @@ supabase db reset
 supabase test db
 ```
 
-The local stack is development-only. Do not expose it to external traffic. After applying the migrations to a remote development project, repeat the access scenarios with separate test users before beginning Phase 3B.
+The local stack is development-only. Do not expose it to external traffic. After applying the migrations to a remote development project, repeat the access scenarios with separate test users before beginning Phase 3C.
 
 ## Configure private knowledge storage
 
@@ -77,9 +81,17 @@ The Phase 3A migration creates and configures `knowledge-files` as a private buc
 
 The database generates object paths in the form `<workspace-id>/<source-id>/<source-id>.<ext>`. The original filename is metadata only and never becomes an arbitrary Storage key. Owners/admins can upload and delete initialized objects; members have read-only access; non-members have no access. All browser operations use the signed-in user's JWT, the publishable key, and RLS.
 
-Creation flows stop at `pending`. `processing`, `ready`, and `failed` are reserved for the later ingestion lifecycle. Phase 3B will add actual content validation, extraction, and chunking. Do not treat extension or MIME validation as proof of file contents.
+Creation flows stop at `pending`. Phase 3B uses `processing` during extraction, returns successful sources to `pending`, and uses `failed` with a safe code when validation/extraction fails. `ready` remains reserved for Phase 3C indexing. Extension and MIME validation are not treated as proof of file contents; Phase 3B also validates the downloaded bytes.
 
 General source deletion is not exposed in Phase 3A. Failed upload initialization can be canceled only after the Storage API confirms removal of the expected object, avoiding direct edits to Storage metadata or a database-only delete. If an `uploading` row remains after an interrupted request, an owner/admin can select **Recover upload**. The recovery RPC accepts only the source ID, locks and authorizes the stored row, and checks its exact private object path: an existing object becomes `pending`, while an absent object removes only that stale row. It also confirms an already-`pending` source without mutation after a lost finalize response.
+
+## Configure Phase 3B extraction
+
+The FastAPI server requires the existing `SUPABASE_URL` and `SUPABASE_PUBLISHABLE_KEY`. It reuses each request's verified bearer token to call the scoped extraction RPCs and download the exact private object. `SUPABASE_SECRET_KEY` is not used by this workflow. Install backend dependencies again after pulling Phase 3B so `pypdf` and `python-docx` are available.
+
+Processing remains explicit through **Process source** or **Retry processing**. Actual downloads are capped at 10 MB regardless of metadata. PDFs are limited to 300 pages; encrypted, malformed, scanned, or image-only PDFs are rejected, and OCR is not currently supported. DOCX containers allow at most 2,000 entries, 50 MB total uncompressed data, and 20 MB for an individual member, with traversal and unsafe active/entity content rejected. TXT and Markdown require UTF-8 (a BOM is accepted). No files are extracted to permanent disk.
+
+Normalized text is capped at 1,000,000 characters and produces at most 1,000 deterministic chunks. Locators use 1-based PDF pages, 1-based DOCX structural blocks, source line ranges for text/Markdown, or `{ "kind": "faq" }`. Successful extraction returns to `pending` with `extracted_at`, counts, and chunks populated. This means **extracted and awaiting indexing**. Phase 3C still owns embeddings, pgvector, and transition to `ready`.
 
 ## Configure authentication
 
@@ -106,6 +118,10 @@ Use synthetic accounts only, then verify:
 - private object reads/uploads/deletes follow the workspace role policies;
 - an interrupted upload exposes recovery only to owners/admins, and a member/non-member cannot invoke the recovery RPC successfully;
 - recovery moves an exact existing object to `pending`, removes only an absent-object stale row, and does not change other lifecycle states;
+- owners/admins can process pending and failed sources while members/non-members cannot start extraction;
+- malformed, encrypted, oversized, non-UTF-8, binary-like, and no-text fixtures fail with an approved safe code and no raw parser detail;
+- completed extraction stores sequential workspace-bound chunks with truthful locators and leaves the source `pending`;
+- retrying replaces the old chunk set atomically, while a failed replacement preserves the prior complete set;
 - successful files remain `pending`, not `ready`, until a later processing phase.
 
 This repository run did not have a hosted project configured, so these checks have not been claimed as executed.

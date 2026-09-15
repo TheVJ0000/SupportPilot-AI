@@ -98,6 +98,14 @@ flowchart LR
     VECTOR --> STATUS[Processing / Indexing Status]
 ```
 
+Phase 3B implements the flow only through deterministic chunk storage; embedding and vector-index steps remain Phase 3C. The protected FastAPI endpoint accepts only a source UUID. Its internal auth context retains the already-verified user access token without serializing, logging, or persisting it. A narrow gateway calls the extraction lifecycle RPCs and downloads the exact database-returned private path using the publishable key plus that user's bearer token; no secret-key client is used.
+
+`begin_knowledge_extraction` locks the source, derives its workspace, authorizes an owner/admin, moves `pending` or `failed` to `processing`, and rejects a second request unless the prior attempt is over 15 minutes old. File bytes are held in memory and hard-limited to 10 MB. PDFs require a valid signature, are rejected when encrypted or over 300 pages, and preserve 1-based page locators. OCR is not included, so scanned/image-only PDFs fail with no extractable text. DOCX parsing first validates the ZIP container (2,000 entries, 50 MB total expansion, 20 MB per member), rejects traversal, encrypted/macro/embedded-active content and XML entity declarations, then extracts paragraphs and tables in structural order. TXT/Markdown are UTF-8-only and preserve line ranges. FAQs use canonical question/answer text without Storage access.
+
+Normalization uses Unicode NFC, stable newline/whitespace handling, control-character removal, and preserved block boundaries. Deterministic character/paragraph-aware chunking targets 1,400 characters, caps chunks at 2,000 characters (below the 2,200-character database ceiling), and uses up to 180 characters of overlap when it fits. Oversized blocks prefer sentence and word boundaries before a hard character split. Every chunk receives a zero-based index, lowercase SHA-256 digest, exact character count, and an aggregated locator: PDF pages, DOCX structural blocks, text/Markdown lines, or FAQ kind.
+
+`complete_knowledge_extraction` validates the entire JSON chunk set before atomically replacing prior chunks and returning the source to `pending` with extraction counts. That state explicitly means extracted and awaiting Phase 3C embedding/indexing; Phase 3B never marks a source `ready`. A failed attempt retains any previously committed chunk set, writes only an approved machine error code, and can be retried. Workspace members may read chunks through RLS, while browser roles have no direct chunk mutation grants.
+
 ### Ingestion principles
 
 - Processing must preserve `workspace_id` ownership.
@@ -185,4 +193,4 @@ Generation and embeddings should be called through application interfaces rather
 
 ## Database scope
 
-Phase 3A adds generalized knowledge-source metadata and private file storage to the Phase 2 profile/workspace foundation. Extracted content, chunks, embeddings, conversations, messages, feedback, escalations, analytics, and their associated indexes and policies remain deferred to later focused phases.
+Phase 3B adds bounded extraction metadata and workspace-bound citation chunks to the Phase 3A source/storage foundation. Embeddings, vector columns/search, conversations, messages, feedback, escalations, analytics, and their associated later-stage policies remain deferred. Phase 3C is responsible for embeddings, pgvector indexing, and the first legitimate transition to `ready`.

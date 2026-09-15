@@ -30,7 +30,7 @@ async def test_cors_allows_only_the_configured_frontend_origin() -> None:
             "/api/health",
             headers={
                 "Origin": "http://localhost:5173",
-                "Access-Control-Request-Method": "GET",
+                "Access-Control-Request-Method": "POST",
                 "Access-Control-Request-Headers": "Authorization",
             },
         )
@@ -43,5 +43,6 @@ async def test_cors_allows_only_the_configured_frontend_origin() -> None:
         )
 
     assert allowed_response.headers["access-control-allow-origin"] == "http://localhost:5173"
+    assert "POST" in allowed_response.headers["access-control-allow-methods"]
     assert "Authorization" in allowed_response.headers["access-control-allow-headers"]
     assert "access-control-allow-origin" not in untrusted_response.headers

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useAuth } from '../auth/useAuth'
 import {
   createFaqKnowledgeSource,
   listKnowledgeSources,
@@ -6,8 +7,10 @@ import {
   uploadKnowledgeFile,
 } from './knowledgeApi'
 import type { KnowledgeSource } from './types'
+import { KnowledgeProcessingError, processKnowledgeSource } from './processingApi'
 
 export function useKnowledgeSources(workspaceId: string) {
+  const { accessToken } = useAuth()
   const [sources, setSources] = useState<KnowledgeSource[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -54,7 +57,18 @@ export function useKnowledgeSources(workspaceId: string) {
         await refresh()
         return result
       },
+      processSource: async (sourceId: string) => {
+        if (!accessToken) throw new KnowledgeProcessingError('Your session is no longer active.')
+        try {
+          const result = await processKnowledgeSource(accessToken, sourceId)
+          await refresh()
+          return result
+        } catch (error) {
+          await refresh()
+          throw error
+        }
+      },
     }),
-    [error, loading, refresh, sources, workspaceId],
+    [accessToken, error, loading, refresh, sources, workspaceId],
   )
 }

@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react'
 import { KnowledgeOperationError } from '../knowledge/knowledgeApi'
-import type { KnowledgeSourceStatus } from '../knowledge/types'
+import { KnowledgeProcessingError } from '../knowledge/processingApi'
+import type { KnowledgeSource, KnowledgeSourceStatus } from '../knowledge/types'
 import { KnowledgeValidationError } from '../knowledge/validation'
 import { useKnowledgeSources } from '../knowledge/useKnowledgeSources'
 import { useWorkspace } from '../workspace/useWorkspace'
@@ -13,8 +14,18 @@ const STATUS_STYLES: Record<KnowledgeSourceStatus, string> = {
   failed: 'border-rose-300/20 bg-rose-300/10 text-rose-200',
 }
 
+function sourceStatusLabel(source: KnowledgeSource): string {
+  if (source.status === 'pending') {
+    return source.extracted_at ? 'Extracted · awaiting indexing' : 'Pending processing'
+  }
+  if (source.status === 'failed') return 'Processing failed'
+  if (source.status === 'processing') return 'Processing'
+  if (source.status === 'uploading') return 'Uploading'
+  return 'Ready'
+}
+
 function KnowledgeWorkspace({ workspaceId, canManage }: { workspaceId: string; canManage: boolean }) {
-  const { sources, loading, error, refresh, uploadFile, addFaq, recoverUpload } =
+  const { sources, loading, error, refresh, uploadFile, addFaq, recoverUpload, processSource } =
     useKnowledgeSources(workspaceId)
   const [file, setFile] = useState<File | null>(null)
   const [question, setQuestion] = useState('')
@@ -25,6 +36,8 @@ function KnowledgeWorkspace({ workspaceId, canManage }: { workspaceId: string; c
   const [faqMessage, setFaqMessage] = useState<string | null>(null)
   const [recoveringSourceId, setRecoveringSourceId] = useState<string | null>(null)
   const [recoveryMessage, setRecoveryMessage] = useState<string | null>(null)
+  const [processingSourceId, setProcessingSourceId] = useState<string | null>(null)
+  const [processingMessage, setProcessingMessage] = useState<string | null>(null)
 
   async function handleUpload(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -90,6 +103,26 @@ function KnowledgeWorkspace({ workspaceId, canManage }: { workspaceId: string; c
     }
   }
 
+  async function handleProcessing(sourceId: string) {
+    if (processingSourceId) return
+    setProcessingSourceId(sourceId)
+    setProcessingMessage(null)
+    try {
+      const result = await processSource(sourceId)
+      setProcessingMessage(
+        `Source extracted into ${result.chunkCount} ${result.chunkCount === 1 ? 'chunk' : 'chunks'} and is awaiting indexing.`,
+      )
+    } catch (caught) {
+      setProcessingMessage(
+        caught instanceof KnowledgeProcessingError
+          ? caught.message
+          : 'The source could not be processed safely. Please try again.',
+      )
+    } finally {
+      setProcessingSourceId(null)
+    }
+  }
+
   return (
     <>
       {canManage ? (
@@ -144,6 +177,7 @@ function KnowledgeWorkspace({ workspaceId, canManage }: { workspaceId: string; c
           {error && <button className="text-sm font-semibold text-cyan-300" onClick={() => void refresh()} type="button">Try again</button>}
         </div>
         <p aria-live="polite" className="mt-3 min-h-6 text-sm text-slate-300">{recoveryMessage}</p>
+        <p aria-live="polite" className="min-h-6 text-sm text-slate-300">{processingMessage}</p>
 
         {loading ? (
           <p aria-live="polite" className="mt-6 text-slate-400">Loading knowledge sources…</p>
@@ -166,9 +200,9 @@ function KnowledgeWorkspace({ workspaceId, canManage }: { workspaceId: string; c
                     {new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' }).format(new Date(source.created_at))}
                   </p>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-slate-300">{source.source_type}</span>
-                  <span className={`rounded-full border px-3 py-1 text-xs font-semibold capitalize ${STATUS_STYLES[source.status]}`}>{source.status}</span>
+                  <span className={`rounded-full border px-3 py-1 text-xs font-semibold ${STATUS_STYLES[source.status]}`}>{sourceStatusLabel(source)}</span>
                   {canManage && source.status === 'uploading' && (
                     <button
                       className="rounded-lg border border-amber-300/25 px-3 py-1 text-xs font-semibold text-amber-100 hover:bg-amber-300/10 disabled:opacity-60"
@@ -177,6 +211,20 @@ function KnowledgeWorkspace({ workspaceId, canManage }: { workspaceId: string; c
                       type="button"
                     >
                       {recoveringSourceId === source.id ? 'Recovering…' : 'Recover upload'}
+                    </button>
+                  )}
+                  {canManage && (source.status === 'pending' || source.status === 'failed') && (
+                    <button
+                      className="rounded-lg border border-cyan-300/25 px-3 py-1 text-xs font-semibold text-cyan-100 hover:bg-cyan-300/10 disabled:opacity-60"
+                      disabled={processingSourceId !== null}
+                      onClick={() => void handleProcessing(source.id)}
+                      type="button"
+                    >
+                      {processingSourceId === source.id
+                        ? 'Processing…'
+                        : source.status === 'failed'
+                          ? 'Retry processing'
+                          : 'Process source'}
                     </button>
                   )}
                 </div>

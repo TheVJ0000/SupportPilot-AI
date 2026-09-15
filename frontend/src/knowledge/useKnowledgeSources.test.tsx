@@ -3,13 +3,22 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { useKnowledgeSources } from './useKnowledgeSources'
 
 const mocks = vi.hoisted(() => ({
+  accessToken: 'test-access-token',
   createFaqKnowledgeSource: vi.fn(),
   listKnowledgeSources: vi.fn(),
   recoverFileKnowledgeSource: vi.fn(),
   uploadKnowledgeFile: vi.fn(),
+  processKnowledgeSource: vi.fn(),
 }))
 
 vi.mock('./knowledgeApi', () => mocks)
+vi.mock('./processingApi', () => ({
+  KnowledgeProcessingError: class extends Error {},
+  processKnowledgeSource: mocks.processKnowledgeSource,
+}))
+vi.mock('../auth/useAuth', () => ({
+  useAuth: () => ({ accessToken: mocks.accessToken }),
+}))
 
 const WORKSPACE_ID = '20000000-0000-0000-0000-000000000001'
 const SOURCE_ID = '30000000-0000-0000-0000-000000000001'
@@ -49,5 +58,24 @@ describe('useKnowledgeSources', () => {
     expect(mocks.recoverFileKnowledgeSource).toHaveBeenCalledWith(SOURCE_ID)
     expect(mocks.listKnowledgeSources).toHaveBeenCalledTimes(2)
     expect(result.current.sources).toEqual([pendingSource])
+  })
+
+  it('uses the active token and refreshes source state after processing', async () => {
+    mocks.processKnowledgeSource.mockResolvedValue({
+      sourceId: SOURCE_ID,
+      status: 'pending',
+      chunkCount: 2,
+      extractedCharCount: 2400,
+      nextStage: 'embedding',
+    })
+    const { result } = renderHook(() => useKnowledgeSources(WORKSPACE_ID))
+    await waitFor(() => expect(mocks.listKnowledgeSources).toHaveBeenCalledTimes(1))
+
+    await act(async () => {
+      await result.current.processSource(SOURCE_ID)
+    })
+
+    expect(mocks.processKnowledgeSource).toHaveBeenCalledWith('test-access-token', SOURCE_ID)
+    expect(mocks.listKnowledgeSources).toHaveBeenCalledTimes(2)
   })
 })

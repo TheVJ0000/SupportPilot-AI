@@ -24,7 +24,7 @@ SupportPilot AI is a full-stack Generative AI customer-support platform being bu
 
 ## Current status
 
-**Phase 3A — secure knowledge-source storage and management.** Authenticated workspaces can now list private knowledge metadata, while owners/admins can upload PDF, DOCX, TXT, and Markdown files or add manual FAQs. Source creation, trusted Storage paths, ownership, lifecycle status, the private 10 MB bucket limit, tenant access, and recovery of interrupted uploads are enforced by database RPCs and RLS. Text extraction, chunking, embeddings, RAG, and reliable general source deletion remain intentionally deferred.
+**Phase 3B — secure extraction and deterministic chunking.** Owners/admins can process pending or failed PDF, DOCX, TXT, Markdown, and FAQ sources through authenticated FastAPI. The pipeline retrieves the trusted private object with the same user's JWT, validates actual bytes, extracts and normalizes text, creates citation-aware deterministic chunks, and replaces chunks atomically. Completed extraction returns the source to `pending`, meaning extracted and awaiting indexing. Embeddings, pgvector, RAG, and reliable general source deletion remain intentionally deferred.
 
 The initial portfolio-development and public-demo target is **₹0 / $0 infrastructure and AI cost**, using suitable free tiers and replaceable providers.
 
@@ -51,7 +51,7 @@ The applications run locally without Docker, paid services, or external accounts
 
 The product landing page and public health indicator work without an environment file. To enable registration, login, workspaces, and authenticated API verification, copy `.env.example` to `.env` at the repository root and configure the frontend/backend Supabase URL and publishable-key variables. See `docs/SUPABASE_SETUP.md` for the Free-plan setup and smoke-test checklist.
 
-The Knowledge Base route is `/app/knowledge`. File uploads use the authenticated Supabase client and the private `knowledge-files` bucket. SupportPilot limits each source file to 10 MB, even though the Supabase Free plan currently permits a higher per-file maximum. Owners/admins can use **Recover upload** for an interrupted source still marked `uploading`; the database safely reconciles it against the exact expected private object.
+The Knowledge Base route is `/app/knowledge`. File uploads use the authenticated Supabase client and the private `knowledge-files` bucket. SupportPilot limits each source file to 10 MB, even though the Supabase Free plan currently permits a higher per-file maximum. Owners/admins can recover interrupted uploads and explicitly process pending/failed sources. PDF extraction is limited to 300 pages and does not use OCR, so scanned/image-only PDFs are rejected safely. DOCX files receive ZIP-container safety checks before parsing. TXT and Markdown must be valid UTF-8.
 
 ### Backend
 

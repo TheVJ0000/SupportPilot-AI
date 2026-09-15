@@ -4,7 +4,7 @@ from typing import Annotated, Protocol
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
-from app.auth.models import AuthenticatedUser
+from app.auth.models import AuthenticatedRequestContext, AuthenticatedUser
 from app.auth.verifier import (
     AuthenticationError,
     AuthenticationServiceUnavailableError,
@@ -37,10 +37,10 @@ def get_token_verifier() -> TokenVerifier:
     )
 
 
-async def get_current_user(
+async def get_authenticated_context(
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer_scheme)],
     verifier: Annotated[TokenVerifier, Depends(get_token_verifier)],
-) -> AuthenticatedUser:
+) -> AuthenticatedRequestContext:
     if credentials is None or credentials.scheme.lower() != "bearer":
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -49,7 +49,7 @@ async def get_current_user(
         )
 
     try:
-        return await verifier.verify(credentials.credentials)
+        user = await verifier.verify(credentials.credentials)
     except AuthenticationError as error:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -61,3 +61,11 @@ async def get_current_user(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Authentication service is temporarily unavailable",
         ) from error
+
+    return AuthenticatedRequestContext(user=user, access_token=credentials.credentials)
+
+
+async def get_current_user(
+    context: Annotated[AuthenticatedRequestContext, Depends(get_authenticated_context)],
+) -> AuthenticatedUser:
+    return context.user
