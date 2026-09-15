@@ -24,7 +24,7 @@ SupportPilot AI is a full-stack Generative AI customer-support platform being bu
 
 ## Current status
 
-**Phase 5B.3 — customer feedback and human-handoff foundation, complete in application code and automated tests.** Anonymous customers can rate persisted assistant messages as helpful or not helpful and change that single stored rating. A confirmed human request moves the conversation to `human_requested`, preserves history and feedback, and blocks further AI turns. No human is connected or notified yet; Phase 6 will add bounded triage/escalation automation. True answer streaming remains the final major deferred Phase 5 requirement, so Phase 5 is not complete.
+**Phase 5 — customer chat UX, complete in application code and automated tests.** Anonymous customers can continue persisted conversations, receive progressively rendered grounded answers with citations, rate assistant messages, and request human support. The NDJSON delivery endpoint persists each idempotent turn before emitting answer chunks, making interrupted delivery safe to retry. A confirmed human request moves the conversation to `human_requested`, preserves history and feedback, and blocks further AI turns. No human is connected or notified yet; Phase 6 will add bounded triage/escalation automation.
 
 The initial portfolio-development and public-demo target is **₹0 / $0 infrastructure and AI cost**, using suitable free tiers and replaceable providers.
 

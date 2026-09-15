@@ -10,7 +10,7 @@ const mocks = vi.hoisted(() => ({
   getCustomerConversation: vi.fn(),
   requestCustomerHumanSupport: vi.fn(),
   setCustomerMessageFeedback: vi.fn(),
-  submitCustomerTurn: vi.fn(),
+  streamCustomerTurn: vi.fn(),
 }))
 
 vi.mock('../chat/customerChatApi', async (importOriginal) => {
@@ -21,7 +21,7 @@ vi.mock('../chat/customerChatApi', async (importOriginal) => {
     getCustomerConversation: mocks.getCustomerConversation,
     requestCustomerHumanSupport: mocks.requestCustomerHumanSupport,
     setCustomerMessageFeedback: mocks.setCustomerMessageFeedback,
-    submitCustomerTurn: mocks.submitCustomerTurn,
+    streamCustomerTurn: mocks.streamCustomerTurn,
   }
 })
 
@@ -82,16 +82,22 @@ describe('hosted customer chat page', () => {
     localStorage.clear()
     mocks.createCustomerSession.mockResolvedValue(createdSession())
     mocks.getCustomerConversation.mockResolvedValue(conversation())
-    mocks.submitCustomerTurn.mockResolvedValue({
-      conversation_id: CONVERSATION_ID,
-      turn_id: TURN_ID,
-      message_id: ASSISTANT_MESSAGE_ID,
-      client_message_id: CLIENT_MESSAGE_ID,
-      status: 'answered',
-      answer: 'Use the account reset link.',
-      citations: [],
-      is_replay: false,
-    })
+    mocks.streamCustomerTurn.mockImplementation(
+      (_conversationId, _token, _clientMessageId, _message, onDelta) => {
+        onDelta('Use the ')
+        onDelta('account reset link.')
+        return Promise.resolve({
+          conversation_id: CONVERSATION_ID,
+          turn_id: TURN_ID,
+          message_id: ASSISTANT_MESSAGE_ID,
+          client_message_id: CLIENT_MESSAGE_ID,
+          status: 'answered',
+          answer: 'Use the account reset link.',
+          citations: [],
+          is_replay: false,
+        })
+      },
+    )
     mocks.setCustomerMessageFeedback.mockImplementation(
       (_conversationId, _token, messageId, rating) =>
         Promise.resolve({ message_id: messageId, rating }),
@@ -179,7 +185,7 @@ describe('hosted customer chat page', () => {
 
   it('prevents blank and duplicate sends and uses one browser UUID', async () => {
     let resolveTurn!: (value: unknown) => void
-    mocks.submitCustomerTurn.mockReturnValue(
+    mocks.streamCustomerTurn.mockReturnValue(
       new Promise((resolve) => {
         resolveTurn = resolve
       }),
@@ -190,21 +196,26 @@ describe('hosted customer chat page', () => {
 
     await user.type(composer, '   ')
     await user.click(screen.getByRole('button', { name: 'Send' }))
-    expect(mocks.submitCustomerTurn).not.toHaveBeenCalled()
+    expect(mocks.streamCustomerTurn).not.toHaveBeenCalled()
 
     await user.clear(composer)
     await user.type(composer, 'How do I reset my password?')
     await user.keyboard('{Enter}{Enter}')
 
-    expect(mocks.submitCustomerTurn).toHaveBeenCalledOnce()
-    expect(mocks.submitCustomerTurn).toHaveBeenCalledWith(
+    expect(mocks.streamCustomerTurn).toHaveBeenCalledOnce()
+    expect(mocks.streamCustomerTurn).toHaveBeenCalledWith(
       CONVERSATION_ID,
       SESSION_TOKEN,
       CLIENT_MESSAGE_ID,
       'How do I reset my password?',
+      expect.any(Function),
     )
     expect(crypto.randomUUID).toHaveBeenCalledOnce()
     expect(screen.getByRole('button', { name: 'Sending…' })).toBeDisabled()
+
+    act(() => mocks.streamCustomerTurn.mock.calls[0][4]('Partial grounded answer…'))
+    expect(screen.getByText('Partial grounded answer…')).toBeInTheDocument()
+    expect(screen.queryByText('Was this helpful?')).not.toBeInTheDocument()
 
     await act(async () => {
       resolveTurn({
@@ -232,7 +243,7 @@ describe('hosted customer chat page', () => {
   })
 
   it('renders insufficient-evidence answers as normal assistant messages', async () => {
-    mocks.submitCustomerTurn.mockResolvedValue({
+    mocks.streamCustomerTurn.mockResolvedValue({
       conversation_id: CONVERSATION_ID,
       turn_id: TURN_ID,
       message_id: ASSISTANT_MESSAGE_ID,
@@ -286,7 +297,7 @@ describe('hosted customer chat page', () => {
   })
 
   it('offers a safe Retry that reuses the original client message ID', async () => {
-    mocks.submitCustomerTurn
+    mocks.streamCustomerTurn
       .mockRejectedValueOnce(new Error('raw backend SQL and Gemini details'))
       .mockResolvedValueOnce({
         conversation_id: CONVERSATION_ID,
@@ -309,9 +320,9 @@ describe('hosted customer chat page', () => {
     await user.click(screen.getByRole('button', { name: 'Retry' }))
 
     expect(await screen.findByText('Recovered persisted answer.')).toBeInTheDocument()
-    expect(mocks.submitCustomerTurn).toHaveBeenCalledTimes(2)
-    expect(mocks.submitCustomerTurn.mock.calls[0][2]).toBe(CLIENT_MESSAGE_ID)
-    expect(mocks.submitCustomerTurn.mock.calls[1][2]).toBe(CLIENT_MESSAGE_ID)
+    expect(mocks.streamCustomerTurn).toHaveBeenCalledTimes(2)
+    expect(mocks.streamCustomerTurn.mock.calls[0][2]).toBe(CLIENT_MESSAGE_ID)
+    expect(mocks.streamCustomerTurn.mock.calls[1][2]).toBe(CLIENT_MESSAGE_ID)
     expect(crypto.randomUUID).toHaveBeenCalledOnce()
   })
 
@@ -319,7 +330,7 @@ describe('hosted customer chat page', () => {
     mocks.createCustomerSession
       .mockResolvedValueOnce(createdSession())
       .mockResolvedValueOnce(createdSession(NEW_CONVERSATION_ID, NEW_SESSION_TOKEN))
-    mocks.submitCustomerTurn
+    mocks.streamCustomerTurn
       .mockRejectedValueOnce(new CustomerChatApiError('invalid-session'))
       .mockResolvedValueOnce({
         conversation_id: NEW_CONVERSATION_ID,
@@ -339,11 +350,12 @@ describe('hosted customer chat page', () => {
 
     expect(await screen.findByText('Answered after a fresh session.')).toBeInTheDocument()
     expect(mocks.createCustomerSession).toHaveBeenCalledTimes(2)
-    expect(mocks.submitCustomerTurn.mock.calls[1]).toEqual([
+    expect(mocks.streamCustomerTurn.mock.calls[1]).toEqual([
       NEW_CONVERSATION_ID,
       NEW_SESSION_TOKEN,
       CLIENT_MESSAGE_ID,
       'Keep this question',
+      expect.any(Function),
     ])
     expect(crypto.randomUUID).toHaveBeenCalledOnce()
   })
@@ -489,7 +501,7 @@ describe('hosted customer chat page', () => {
   })
 
   it('offers a human-request CTA after an insufficient-evidence answer', async () => {
-    mocks.submitCustomerTurn.mockResolvedValue({
+    mocks.streamCustomerTurn.mockResolvedValue({
       conversation_id: CONVERSATION_ID,
       turn_id: TURN_ID,
       message_id: ASSISTANT_MESSAGE_ID,
