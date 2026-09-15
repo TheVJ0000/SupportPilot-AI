@@ -49,6 +49,8 @@ class RetrievalResponse(BaseModel):
 
 
 class TrustedCitation(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     source_id: UUID
     source_title: str
     source_type: Literal["file", "faq"]

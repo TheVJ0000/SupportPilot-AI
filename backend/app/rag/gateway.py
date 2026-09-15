@@ -121,59 +121,64 @@ class SupabaseRetrievalGateway:
             payload = response.json()
         except ValueError as error:
             raise GatewayError("search_knowledge_chunks") from error
-        if not isinstance(payload, list):
-            raise GatewayError("search_knowledge_chunks")
+        return parse_retrieval_rows(payload, "search_knowledge_chunks")
 
-        matches: list[RetrievedChunk] = []
-        for row in payload:
-            if not isinstance(row, dict) or set(row) != EXPECTED_RESULT_FIELDS:
-                raise GatewayError("search_knowledge_chunks")
-            try:
-                chunk_id = UUID(str(row["chunk_id"]))
-                source_id = UUID(str(row["source_id"]))
-                source_title = row["source_title"]
-                source_type = row["source_type"]
-                chunk_index = row["chunk_index"]
-                content = row["content"]
-                locator = row["locator"]
-                similarity_value = row["similarity"]
-                if (
-                    not isinstance(source_title, str)
-                    or not 1 <= len(source_title) <= 200
-                    or source_type not in {"file", "faq"}
-                    or not isinstance(chunk_index, int)
-                    or isinstance(chunk_index, bool)
-                    or chunk_index < 0
-                    or not isinstance(content, str)
-                    or not 1 <= len(content) <= 2200
-                    or not _valid_locator(locator)
-                    or isinstance(similarity_value, bool)
-                    or not isinstance(similarity_value, (int, float))
-                ):
-                    raise ValueError
-                similarity = float(similarity_value)
-                if not math.isfinite(similarity) or not -1.0 <= similarity <= 1.0:
-                    raise ValueError
-            except (KeyError, TypeError, ValueError) as error:
-                raise GatewayError("search_knowledge_chunks") from error
-            matches.append(
-                RetrievedChunk(
-                    chunk_id=chunk_id,
-                    source_id=source_id,
-                    source_title=source_title,
-                    source_type=source_type,
-                    chunk_index=chunk_index,
-                    content=content,
-                    locator=locator,
-                    similarity=similarity,
-                )
+
+def parse_retrieval_rows(payload: object, operation: str) -> list[RetrievedChunk]:
+    """Validate the shared trusted retrieval shape returned by either scoped RPC."""
+
+    if not isinstance(payload, list):
+        raise GatewayError(operation)
+    matches: list[RetrievedChunk] = []
+    for row in payload:
+        if not isinstance(row, dict) or set(row) != EXPECTED_RESULT_FIELDS:
+            raise GatewayError(operation)
+        try:
+            chunk_id = UUID(str(row["chunk_id"]))
+            source_id = UUID(str(row["source_id"]))
+            source_title = row["source_title"]
+            source_type = row["source_type"]
+            chunk_index = row["chunk_index"]
+            content = row["content"]
+            locator = row["locator"]
+            similarity_value = row["similarity"]
+            if (
+                not isinstance(source_title, str)
+                or not 1 <= len(source_title) <= 200
+                or source_type not in {"file", "faq"}
+                or not isinstance(chunk_index, int)
+                or isinstance(chunk_index, bool)
+                or chunk_index < 0
+                or not isinstance(content, str)
+                or not 1 <= len(content) <= 2200
+                or not _valid_locator(locator)
+                or isinstance(similarity_value, bool)
+                or not isinstance(similarity_value, (int, float))
+            ):
+                raise ValueError
+            similarity = float(similarity_value)
+            if not math.isfinite(similarity) or not -1.0 <= similarity <= 1.0:
+                raise ValueError
+        except (KeyError, TypeError, ValueError) as error:
+            raise GatewayError(operation) from error
+        matches.append(
+            RetrievedChunk(
+                chunk_id=chunk_id,
+                source_id=source_id,
+                source_title=source_title,
+                source_type=source_type,
+                chunk_index=chunk_index,
+                content=content,
+                locator=locator,
+                similarity=similarity,
             )
-        if matches != sorted(
-            matches,
-            key=lambda match: (-match.similarity, str(match.source_id), match.chunk_index),
-        ):
-            raise GatewayError("search_knowledge_chunks")
-        return matches
+        )
+    if matches != sorted(
+        matches,
+        key=lambda match: (-match.similarity, str(match.source_id), match.chunk_index),
+    ):
+        raise GatewayError(operation)
+    return matches
 
 
 @asynccontextmanager

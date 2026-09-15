@@ -23,15 +23,18 @@ _PROVIDER_MESSAGES = {
 }
 
 
-def normalize_question(question: str) -> str:
+def normalize_question(question: str, *, minimum_chars: int = MIN_QUERY_CHARS) -> str:
+    if minimum_chars not in {1, MIN_QUERY_CHARS}:
+        raise ValueError("Unsupported minimum question length")
     if any(
         unicodedata.category(character) in {"Cc", "Cf"} and character not in {"\t", "\n", "\r"}
         for character in question
     ):
         raise RetrievalHttpError("The question contains unsupported control characters.")
     normalized = " ".join(unicodedata.normalize("NFC", question).split())
-    if len(normalized) < MIN_QUERY_CHARS:
-        raise RetrievalHttpError("Enter a question with at least 2 characters.")
+    if len(normalized) < minimum_chars:
+        noun = "character" if minimum_chars == 1 else "characters"
+        raise RetrievalHttpError(f"Enter a question with at least {minimum_chars} {noun}.")
     if len(normalized) > MAX_QUERY_CHARS:
         raise RetrievalHttpError("Questions may contain at most 2,000 characters.")
     return normalized
@@ -52,12 +55,24 @@ def validate_query_vector(vector: object, dimension: int) -> list[float]:
 
 
 class KnowledgeRetrievalService:
-    def __init__(self, gateway: RetrievalGateway, provider: EmbeddingProvider) -> None:
+    def __init__(
+        self,
+        gateway: RetrievalGateway,
+        provider: EmbeddingProvider,
+        *,
+        minimum_query_chars: int = MIN_QUERY_CHARS,
+    ) -> None:
+        if minimum_query_chars not in {1, MIN_QUERY_CHARS}:
+            raise ValueError("Unsupported minimum query length")
         self._gateway = gateway
         self._provider = provider
+        self._minimum_query_chars = minimum_query_chars
 
     async def retrieve(self, workspace_id: UUID, question: str) -> RetrievalResponse:
-        normalized_question = normalize_question(question)
+        normalized_question = normalize_question(
+            question,
+            minimum_chars=self._minimum_query_chars,
+        )
         try:
             query_vector = validate_query_vector(
                 await self._provider.embed_query(normalized_question),

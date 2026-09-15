@@ -50,7 +50,7 @@ Authenticated FastAPI requests flow through one API client that applies the acti
 - uses Supabase Auth's user endpoint with the publishable key for legacy HS256 projects that cannot be verified by JWKS;
 - returns only the verified user ID and optional email from `/api/auth/me`.
 
-No JWT signing secret is requested or stored. `SUPABASE_SECRET_KEY` remains reserved for future exceptional, narrowly scoped server operations and is not part of ordinary auth, workspace, or API request handling.
+No JWT signing secret is requested or stored. `SUPABASE_SECRET_KEY` is not part of ordinary auth, workspace, Knowledge Base, or business RAG request handling. Phase 5A uses it only inside a narrow server-side customer-chat RPC gateway because anonymous customers have no Supabase identity.
 
 The initial Phase 2A data model contains only:
 
@@ -137,7 +137,32 @@ Phase 4B adds the protected `/api/rag/answer` endpoint without changing retrieva
 
 The initial implementation uses Gemini `gemini-3.8-flash` with low thinking, a 1,200-token output limit, and a Pydantic structured-output schema. Retrieved documents and the user question are serialized as JSON and explicitly treated as untrusted data. The model receives no tools, function calling, Google Search grounding, URL context, database access, or raw embeddings. Prompt-injection resistance is defense in depth rather than a mathematical guarantee.
 
-The model may return only `answerable` with a bounded answer and request-local evidence labels, or `insufficient_evidence` with no answer or labels. No fixed cosine threshold is used: when matches exist, the model evaluates their actual content rather than answering from general knowledge. The server validates every returned label, removes duplicate references deterministically, restores retrieval order, and constructs citation titles, types, indices, UUIDs, and locators solely from trusted retrieval results. Unknown labels or malformed structured output fail safely; the model never supplies final citation metadata. Customer chat and conversation persistence remain Phase 5 work.
+The model may return only `answerable` with a bounded answer and request-local evidence labels, or `insufficient_evidence` with no answer or labels. No fixed cosine threshold is used: when matches exist, the model evaluates their actual content rather than answering from general knowledge. The server validates every returned label, removes duplicate references deterministically, restores retrieval order, and constructs citation titles, types, indices, UUIDs, and locators solely from trusted retrieval results. Unknown labels or malformed structured output fail safely; the model never supplies final citation metadata. Phase 5A reuses this same orchestration for anonymous customer turns.
+
+## Customer conversation flow
+
+```mermaid
+flowchart LR
+    ID[Unpredictable public chat ID] --> SESSION[Opaque seven-day customer session]
+    SESSION --> TURN[Idempotent persistent customer turn]
+    TURN --> RET[Session-scoped knowledge retrieval]
+    RET --> RAG[Existing grounded RAG engine]
+    RAG --> SAVE[Atomic answer and citation snapshot]
+    SAVE --> HISTORY[Conversation history API]
+```
+
+Phase 5A introduces one enabled chat configuration per workspace, SHA-256-only customer-session records, conversations, idempotent turns, customer/assistant messages, and historical citation snapshots. FastAPI generates at least 256 bits of token entropy, returns the raw token only once, hashes it immediately on later requests from `X-SupportPilot-Session`, and never stores or logs the raw value. A conversation is limited to 100 customer turns; messages, answers, citations, and retrieval counts are bounded. Sessions remain anonymous and collect no name, email, phone, IP address, location, or browser fingerprint. Robust public abuse/rate limiting remains Phase 8 work.
+
+The two security paths remain deliberately separate:
+
+- Business/admin operations use a Supabase user JWT, the publishable key, and RLS.
+- Anonymous customer operations use an opaque customer session through FastAPI, a fixed allow-list customer-chat gateway, and server-only RPCs invoked with `SUPABASE_SECRET_KEY`.
+
+The secret key bypasses RLS, so it never reaches browser code and cannot be used through a generic privileged client. Direct table privileges are withheld even from the service role. Every public-chat RPC independently derives and validates the session/workspace relationships relevant to its operation, and returns only its bounded safe result. The original member-authorized `search_knowledge_chunks` RPC is unchanged; a separate server-only retrieval RPC derives the workspace from the validated customer session and never returns vectors.
+
+The turn-start RPC creates the processing turn and normalized customer message atomically. Its `(conversation_id, client_message_id)` uniqueness prevents duplicate customer messages and generation: completed retries return the persisted answer, processing retries return a safe conflict, and failed turns can retry without deleting their customer message. The completion RPC validates citation data against current trusted workspace chunks before atomically writing an assistant message, citation snapshots, links, and timestamps. Provider exception details are never persisted.
+
+Phase 5A is intentionally non-streaming and API-only. Phase 5B still owns the customer chat UI, streaming presentation, conversation-aware context, feedback, and human-request experience.
 
 ### Question-answering principles
 
@@ -149,7 +174,7 @@ The normal support Q&A path is RAG, not an autonomous agent.
 4. Determine whether available evidence is sufficient.
 5. Generate only a grounded answer from approved evidence.
 6. Return relevant source citations.
-7. Persist the conversation and answer metadata in Phase 5.
+7. Persist the conversation and answer metadata through the Phase 5A customer-chat flow.
 
 When evidence is insufficient, the system should not fabricate an answer. It should return an appropriate fallback and offer or trigger escalation where applicable.
 
@@ -201,4 +226,4 @@ Generation and embeddings should be called through application interfaces rather
 
 ## Database scope
 
-Phase 3C completes ingestion with explicit lifecycle metadata, replaceable embeddings, 768-dimensional pgvector storage, and one cosine HNSW index. Phase 4 adds authenticated workspace-scoped semantic retrieval, evidence-sufficiency decisions, grounded structured generation, and server-validated citations without adding tables. Conversations, messages, feedback, escalations, analytics, and their later-stage policies remain deferred.
+Phase 3C completes ingestion with explicit lifecycle metadata, replaceable embeddings, 768-dimensional pgvector storage, and one cosine HNSW index. Phase 4 adds authenticated workspace-scoped semantic retrieval, evidence-sufficiency decisions, grounded structured generation, and server-validated citations. Phase 5A adds `workspace_chat_configs`, `customer_sessions`, `conversations`, `conversation_turns`, `messages`, and `message_citations` plus narrowly granted customer-chat RPCs. Feedback, escalations, and analytics remain deferred.

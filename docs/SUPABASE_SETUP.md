@@ -19,9 +19,11 @@ Publishable keys identify a public application component. They do not grant user
 | --- | --- | --- |
 | Browser | `VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY` | Publishable key only; values are bundled into client code. |
 | FastAPI server | `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY` | Used to verify authenticated user JWTs. The publishable key supports the documented legacy-token fallback. |
-| Privileged server operations | `SUPABASE_SECRET_KEY` | Server-only; bypasses RLS and should remain unset until a narrowly scoped operation genuinely requires it. |
+| Privileged customer-chat operations | `SUPABASE_SECRET_KEY` | Server-only; bypasses RLS and is used only by the Phase 5A fixed allow-list RPC gateway. |
 
 Never place `SUPABASE_SECRET_KEY` in a `VITE_` variable or frontend source. Normal user requests carry the user's Supabase access token and rely on RLS or verified FastAPI identity rather than a secret-key client. The backend does not need the JWT signing secret.
+
+For Phase 5A, set a current Supabase secret key in the FastAPI environment only. The narrow gateway sends it only as the Data API `apikey`; it does not combine it with a customer JWT or put it in an `Authorization` header. Secret keys map to the privileged service role and bypass RLS, so the migration removes generic direct table privileges and grants that role only the named customer-chat `SECURITY DEFINER` functions. If the variable is missing, the application still starts and only customer-chat persistence endpoints return `503`.
 
 See Supabase's current [API key guide](https://supabase.com/docs/guides/getting-started/api-keys) for key creation and rotation details.
 
@@ -48,6 +50,11 @@ The migration must result in:
 - workspace reads limited to members and workspace management limited to owners;
 - direct browser insertion or role changes in `workspace_members` remaining unavailable;
 - `create_workspace` atomically creating the workspace and its caller-owned membership.
+- one unpredictable `workspace_chat_configs.public_id` being backfilled/generated per workspace and visible only to that workspace's authenticated members;
+- no raw customer-session token column, a strictly formatted SHA-256 hash, and a maximum seven-day expiry;
+- no direct `anon`, `authenticated`, or service-role table access to customer session/conversation data beyond member-scoped RLS reads of safe conversation tables;
+- all seven customer-chat RPCs executable only by `service_role`, with each independently deriving and validating the session/workspace relationships relevant to its operation;
+- idempotent turn creation, bounded messages/turn counts, atomic answer/citation completion, safe retryable failure codes, and no vectors in customer retrieval results;
 - RLS enabled on `knowledge_sources`, with member reads and no direct browser mutation grants;
 - owners/admins creating sources only through the scoped RPCs;
 - members unable to create, upload, update, or delete knowledge sources;
@@ -106,6 +113,23 @@ The migration enables pgvector, adds a 768-dimensional vector column and one cos
 3. Choose whether email confirmation is required for the development project. The registration UI supports both an immediate session and a confirmation-required response.
 4. Start FastAPI and the frontend with the commands in the repository README.
 
+## Configure Phase 5A customer chat
+
+Apply the Phase 5A migration, then add `SUPABASE_SECRET_KEY` only to the backend process. An anonymous browser starts with `POST /api/chat/{public_id}/session`; the raw opaque token is returned once and must be retained only by the browser client. Subsequent non-streaming turn and history calls send it in `X-SupportPilot-Session`. They must not use a Supabase bearer token for this credential.
+
+The supported flow is:
+
+```text
+public chat ID
+→ anonymous opaque customer session
+→ persistent conversation and idempotent turn
+→ customer-session-scoped retrieval
+→ existing grounded RAG engine
+→ atomically persisted assistant answer and citation snapshots
+```
+
+Use only synthetic/non-confidential content. Phase 5A does not include a hosted chat UI, streaming, conversation-aware query rewriting, feedback, or human-request handling.
+
 For modern asymmetric signing keys, FastAPI validates tokens with the project's `/auth/v1/.well-known/jwks.json` endpoint using a cached JWKS client and fixed ES256/RS256 algorithms. Legacy HS256 tokens are validated by Supabase Auth's `/auth/v1/user` endpoint with the publishable key. Issuer, audience, expiration, subject, and signature/provider validity are not bypassed.
 
 ## Hosted smoke-test checklist
@@ -119,6 +143,12 @@ Use synthetic accounts only, then verify:
 - one workspace auto-selects, multiple accessible workspaces can be selected, and inaccessible IDs are discarded;
 - the application shell reports `Authenticated API connected` while `/api/auth/me` rejects missing or invalid bearer tokens;
 - a second test user cannot read the first user's profile, membership, or workspace.
+- a workspace member can read only their safe public chat configuration, while another workspace cannot discover it;
+- session creation works from the public chat ID without exposing an internal workspace ID or token hash;
+- a wrong, expired, cross-workspace, or disabled-chat session credential cannot start a turn or restore history;
+- retrying one client message ID never duplicates its customer message or completed assistant answer;
+- customer retrieval returns only compatible ready chunks from the session-derived workspace and no vectors;
+- completed answers restore in chronological history with their exact trusted citation snapshots;
 - an owner and admin can add file/FAQ sources while an ordinary member sees read-only controls;
 - unsupported or oversized files are rejected before upload and again by trusted infrastructure;
 - private object reads/uploads/deletes follow the workspace role policies;
