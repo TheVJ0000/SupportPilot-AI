@@ -51,3 +51,42 @@ class ProcessingResult(BaseModel):
     chunk_count: int
     extracted_char_count: int
     next_stage: Literal["embedding"] = "embedding"
+
+
+@dataclass(frozen=True)
+class IndexingChunk:
+    chunk_id: UUID
+    chunk_index: int
+    content: str
+    content_sha256: str
+
+
+@dataclass(frozen=True)
+class IndexingSource:
+    source_id: UUID
+    workspace_id: UUID
+    title: str
+    chunks: list[IndexingChunk]
+
+
+@dataclass(frozen=True)
+class IndexedChunk:
+    chunk_index: int
+    content_sha256: str
+    embedding: list[float]
+
+    def as_rpc_payload(self) -> dict[str, Any]:
+        return {
+            "chunk_index": self.chunk_index,
+            "content_sha256": self.content_sha256,
+            "embedding": self.embedding,
+        }
+
+
+class IndexingResult(BaseModel):
+    source_id: UUID
+    status: Literal["ready"] = "ready"
+    chunk_count: int
+    embedding_provider: str
+    embedding_model: str
+    embedding_dimension: Literal[768] = 768

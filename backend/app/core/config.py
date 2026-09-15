@@ -1,5 +1,6 @@
 from functools import lru_cache
 from pathlib import Path
+from typing import Literal
 
 from pydantic import AnyHttpUrl, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -15,6 +16,10 @@ class Settings(BaseSettings):
     supabase_url: AnyHttpUrl | None = None
     supabase_publishable_key: str | None = None
     supabase_secret_key: SecretStr | None = None
+    embedding_provider: Literal["gemini"] = "gemini"
+    gemini_api_key: SecretStr | None = None
+    gemini_embedding_model: str = "gemini-embedding-2"
+    gemini_embedding_dimension: Literal[768] = 768
 
     model_config = SettingsConfigDict(
         env_file=ROOT_ENV_FILE,

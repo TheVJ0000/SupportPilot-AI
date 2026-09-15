@@ -9,12 +9,17 @@ const mocks = vi.hoisted(() => ({
   recoverFileKnowledgeSource: vi.fn(),
   uploadKnowledgeFile: vi.fn(),
   processKnowledgeSource: vi.fn(),
+  indexKnowledgeSource: vi.fn(),
 }))
 
 vi.mock('./knowledgeApi', () => mocks)
 vi.mock('./processingApi', () => ({
   KnowledgeProcessingError: class extends Error {},
   processKnowledgeSource: mocks.processKnowledgeSource,
+}))
+vi.mock('./indexingApi', () => ({
+  KnowledgeIndexingError: class extends Error {},
+  indexKnowledgeSource: mocks.indexKnowledgeSource,
 }))
 vi.mock('../auth/useAuth', () => ({
   useAuth: () => ({ accessToken: mocks.accessToken }),
@@ -76,6 +81,26 @@ describe('useKnowledgeSources', () => {
     })
 
     expect(mocks.processKnowledgeSource).toHaveBeenCalledWith('test-access-token', SOURCE_ID)
+    expect(mocks.listKnowledgeSources).toHaveBeenCalledTimes(2)
+  })
+
+  it('uses the active token and refreshes after indexing succeeds', async () => {
+    mocks.indexKnowledgeSource.mockResolvedValue({
+      sourceId: SOURCE_ID,
+      status: 'ready',
+      chunkCount: 1,
+      embeddingProvider: 'gemini',
+      embeddingModel: 'gemini-embedding-2',
+      embeddingDimension: 768,
+    })
+    const { result } = renderHook(() => useKnowledgeSources(WORKSPACE_ID))
+    await waitFor(() => expect(mocks.listKnowledgeSources).toHaveBeenCalledTimes(1))
+
+    await act(async () => {
+      await result.current.indexSource(SOURCE_ID)
+    })
+
+    expect(mocks.indexKnowledgeSource).toHaveBeenCalledWith('test-access-token', SOURCE_ID)
     expect(mocks.listKnowledgeSources).toHaveBeenCalledTimes(2)
   })
 })

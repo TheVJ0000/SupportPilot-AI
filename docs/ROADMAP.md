@@ -46,9 +46,9 @@ The current development machine had neither Docker nor the Supabase CLI, so the 
 
 **Objective:** Allow admins to add support knowledge and reliably convert supported content into workspace-scoped, searchable chunks.
 
-**Current progress:** Phase 3A completes secure source storage and recovery. Phase 3B adds a source-ID-only authenticated processing endpoint, hostile-file validation, PDF/DOCX/TXT/Markdown/FAQ extraction, deterministic normalization and chunking, citation locators, atomic chunk replacement, safe retry/failure states, and member-readable chunk RLS. Owners/admins explicitly process sources; members remain read-only; non-members have no access. General two-resource deletion remains deferred to avoid partial deletion.
+**Status:** Complete in application code and automated backend/frontend suites. Phase 3A provides private source storage and recovery; Phase 3B provides hostile-file validation, extraction, normalization, deterministic citation chunks, and atomic replacement; Phase 3C adds explicit stage-aware retries, a source-ID-only indexing endpoint, a replaceable Gemini embedding provider, validated bounded batches, 768-dimensional pgvector storage, content-hash integrity checks, atomic completion, and cosine HNSW indexing. Owners/admins manage ingestion, members remain read-only, and non-members have no access.
 
-Phase 3 is not complete. Phase 3C must add provider-abstracted embeddings and pgvector storage/indexing. Phase 3B deliberately returns extracted sources to `pending`; no extraction operation marks a source `ready`.
+The local machine still has neither Docker nor the Supabase CLI, so the pgTAP migrations/security suite and real hosted Supabase/Gemini smoke test remain environment-dependent checks. Phase 4 retrieval and RAG have not begun. General two-resource deletion remains deferred to avoid a misleading partial-delete workflow.
 
 **Completion criteria:**
 

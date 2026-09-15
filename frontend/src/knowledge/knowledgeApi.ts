@@ -58,7 +58,27 @@ function isKnowledgeSource(value: unknown): value is KnowledgeSource {
     Number.isInteger(value.chunk_count) &&
     value.chunk_count >= 0 &&
     'last_error_code' in value &&
-    (value.last_error_code === null || typeof value.last_error_code === 'string')
+    (value.last_error_code === null || typeof value.last_error_code === 'string') &&
+    'processing_stage' in value &&
+    (value.processing_stage === null ||
+      value.processing_stage === 'extraction' ||
+      value.processing_stage === 'indexing') &&
+    'indexing_attempts' in value &&
+    typeof value.indexing_attempts === 'number' &&
+    Number.isInteger(value.indexing_attempts) &&
+    value.indexing_attempts >= 0 &&
+    'indexed_at' in value &&
+    (value.indexed_at === null || typeof value.indexed_at === 'string') &&
+    'embedding_provider' in value &&
+    (value.embedding_provider === null || typeof value.embedding_provider === 'string') &&
+    'embedding_model' in value &&
+    (value.embedding_model === null || typeof value.embedding_model === 'string') &&
+    'embedding_dimension' in value &&
+    (value.embedding_dimension === null || value.embedding_dimension === 768) &&
+    'last_failure_stage' in value &&
+    (value.last_failure_stage === null ||
+      value.last_failure_stage === 'extraction' ||
+      value.last_failure_stage === 'indexing')
   )
 }
 
@@ -81,7 +101,7 @@ export async function listKnowledgeSources(workspaceId: string): Promise<Knowled
   const { data, error } = await getSupabaseClient()
     .from('knowledge_sources')
     .select(
-      'id,title,source_type,status,original_filename,created_at,processing_started_at,processing_attempts,extracted_at,extracted_char_count,chunk_count,last_error_code',
+      'id,title,source_type,status,original_filename,created_at,processing_started_at,processing_attempts,extracted_at,extracted_char_count,chunk_count,last_error_code,processing_stage,indexing_attempts,indexed_at,embedding_provider,embedding_model,embedding_dimension,last_failure_stage',
     )
     .eq('workspace_id', workspaceId)
     .order('created_at', { ascending: false })

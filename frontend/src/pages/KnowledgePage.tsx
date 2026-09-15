@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react'
 import { KnowledgeOperationError } from '../knowledge/knowledgeApi'
 import { KnowledgeProcessingError } from '../knowledge/processingApi'
+import { KnowledgeIndexingError } from '../knowledge/indexingApi'
 import type { KnowledgeSource, KnowledgeSourceStatus } from '../knowledge/types'
 import { KnowledgeValidationError } from '../knowledge/validation'
 import { useKnowledgeSources } from '../knowledge/useKnowledgeSources'
@@ -18,14 +19,18 @@ function sourceStatusLabel(source: KnowledgeSource): string {
   if (source.status === 'pending') {
     return source.extracted_at ? 'Extracted · awaiting indexing' : 'Pending processing'
   }
-  if (source.status === 'failed') return 'Processing failed'
-  if (source.status === 'processing') return 'Processing'
+  if (source.status === 'failed') {
+    return source.last_failure_stage === 'indexing' ? 'Indexing failed' : 'Processing failed'
+  }
+  if (source.status === 'processing') {
+    return source.processing_stage === 'indexing' ? 'Indexing' : 'Processing'
+  }
   if (source.status === 'uploading') return 'Uploading'
   return 'Ready'
 }
 
 function KnowledgeWorkspace({ workspaceId, canManage }: { workspaceId: string; canManage: boolean }) {
-  const { sources, loading, error, refresh, uploadFile, addFaq, recoverUpload, processSource } =
+  const { sources, loading, error, refresh, uploadFile, addFaq, recoverUpload, processSource, indexSource } =
     useKnowledgeSources(workspaceId)
   const [file, setFile] = useState<File | null>(null)
   const [question, setQuestion] = useState('')
@@ -38,6 +43,8 @@ function KnowledgeWorkspace({ workspaceId, canManage }: { workspaceId: string; c
   const [recoveryMessage, setRecoveryMessage] = useState<string | null>(null)
   const [processingSourceId, setProcessingSourceId] = useState<string | null>(null)
   const [processingMessage, setProcessingMessage] = useState<string | null>(null)
+  const [indexingSourceId, setIndexingSourceId] = useState<string | null>(null)
+  const [indexingMessage, setIndexingMessage] = useState<string | null>(null)
 
   async function handleUpload(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -123,6 +130,26 @@ function KnowledgeWorkspace({ workspaceId, canManage }: { workspaceId: string; c
     }
   }
 
+  async function handleIndexing(sourceId: string) {
+    if (indexingSourceId) return
+    setIndexingSourceId(sourceId)
+    setIndexingMessage(null)
+    try {
+      const result = await indexSource(sourceId)
+      setIndexingMessage(
+        `Source indexed successfully with ${result.chunkCount} ${result.chunkCount === 1 ? 'chunk' : 'chunks'}.`,
+      )
+    } catch (caught) {
+      setIndexingMessage(
+        caught instanceof KnowledgeIndexingError
+          ? caught.message
+          : 'The source could not be indexed safely. Please try again.',
+      )
+    } finally {
+      setIndexingSourceId(null)
+    }
+  }
+
   return (
     <>
       {canManage ? (
@@ -178,6 +205,7 @@ function KnowledgeWorkspace({ workspaceId, canManage }: { workspaceId: string; c
         </div>
         <p aria-live="polite" className="mt-3 min-h-6 text-sm text-slate-300">{recoveryMessage}</p>
         <p aria-live="polite" className="min-h-6 text-sm text-slate-300">{processingMessage}</p>
+        <p aria-live="polite" className="min-h-6 text-sm text-slate-300">{indexingMessage}</p>
 
         {loading ? (
           <p aria-live="polite" className="mt-6 text-slate-400">Loading knowledge sources…</p>
@@ -213,7 +241,9 @@ function KnowledgeWorkspace({ workspaceId, canManage }: { workspaceId: string; c
                       {recoveringSourceId === source.id ? 'Recovering…' : 'Recover upload'}
                     </button>
                   )}
-                  {canManage && (source.status === 'pending' || source.status === 'failed') && (
+                  {canManage &&
+                    ((source.status === 'pending' && !source.extracted_at) ||
+                      (source.status === 'failed' && source.last_failure_stage !== 'indexing')) && (
                     <button
                       className="rounded-lg border border-cyan-300/25 px-3 py-1 text-xs font-semibold text-cyan-100 hover:bg-cyan-300/10 disabled:opacity-60"
                       disabled={processingSourceId !== null}
@@ -225,6 +255,22 @@ function KnowledgeWorkspace({ workspaceId, canManage }: { workspaceId: string; c
                         : source.status === 'failed'
                           ? 'Retry processing'
                           : 'Process source'}
+                    </button>
+                  )}
+                  {canManage &&
+                    ((source.status === 'pending' && !!source.extracted_at) ||
+                      (source.status === 'failed' && source.last_failure_stage === 'indexing')) && (
+                    <button
+                      className="rounded-lg border border-violet-300/25 px-3 py-1 text-xs font-semibold text-violet-100 hover:bg-violet-300/10 disabled:opacity-60"
+                      disabled={indexingSourceId !== null}
+                      onClick={() => void handleIndexing(source.id)}
+                      type="button"
+                    >
+                      {indexingSourceId === source.id
+                        ? 'Indexing…'
+                        : source.status === 'failed'
+                          ? 'Retry indexing'
+                          : 'Index source'}
                     </button>
                   )}
                 </div>

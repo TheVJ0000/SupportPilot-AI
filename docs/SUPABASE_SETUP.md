@@ -68,7 +68,7 @@ supabase db reset
 supabase test db
 ```
 
-The local stack is development-only. Do not expose it to external traffic. After applying the migrations to a remote development project, repeat the access scenarios with separate test users before beginning Phase 3C.
+The local stack is development-only. Do not expose it to external traffic. After applying the migrations to a remote development project, repeat the access scenarios with separate test users before beginning Phase 4.
 
 ## Configure private knowledge storage
 
@@ -81,7 +81,7 @@ The Phase 3A migration creates and configures `knowledge-files` as a private buc
 
 The database generates object paths in the form `<workspace-id>/<source-id>/<source-id>.<ext>`. The original filename is metadata only and never becomes an arbitrary Storage key. Owners/admins can upload and delete initialized objects; members have read-only access; non-members have no access. All browser operations use the signed-in user's JWT, the publishable key, and RLS.
 
-Creation flows stop at `pending`. Phase 3B uses `processing` during extraction, returns successful sources to `pending`, and uses `failed` with a safe code when validation/extraction fails. `ready` remains reserved for Phase 3C indexing. Extension and MIME validation are not treated as proof of file contents; Phase 3B also validates the downloaded bytes.
+Creation flows stop at `pending`. Extraction uses `processing_stage=extraction` and successful extraction returns to `pending`; indexing uses `processing_stage=indexing` and only atomic vector completion reaches `ready`. Extension and MIME validation are not treated as proof of file contents; downloaded bytes are validated before extraction.
 
 General source deletion is not exposed in Phase 3A. Failed upload initialization can be canceled only after the Storage API confirms removal of the expected object, avoiding direct edits to Storage metadata or a database-only delete. If an `uploading` row remains after an interrupted request, an owner/admin can select **Recover upload**. The recovery RPC accepts only the source ID, locks and authorizes the stored row, and checks its exact private object path: an existing object becomes `pending`, while an absent object removes only that stale row. It also confirms an already-`pending` source without mutation after a lost finalize response.
 
@@ -91,7 +91,13 @@ The FastAPI server requires the existing `SUPABASE_URL` and `SUPABASE_PUBLISHABL
 
 Processing remains explicit through **Process source** or **Retry processing**. Actual downloads are capped at 10 MB regardless of metadata. PDFs are limited to 300 pages; encrypted, malformed, scanned, or image-only PDFs are rejected, and OCR is not currently supported. DOCX containers allow at most 2,000 entries, 50 MB total uncompressed data, and 20 MB for an individual member, with traversal and unsafe active/entity content rejected. TXT and Markdown require UTF-8 (a BOM is accepted). No files are extracted to permanent disk.
 
-Normalized text is capped at 1,000,000 characters and produces at most 1,000 deterministic chunks. Locators use 1-based PDF pages, 1-based DOCX structural blocks, source line ranges for text/Markdown, or `{ "kind": "faq" }`. Successful extraction returns to `pending` with `extracted_at`, counts, and chunks populated. This means **extracted and awaiting indexing**. Phase 3C still owns embeddings, pgvector, and transition to `ready`.
+Normalized text is capped at 1,000,000 characters and produces at most 1,000 deterministic chunks. Locators use 1-based PDF pages, 1-based DOCX structural blocks, source line ranges for text/Markdown, or `{ "kind": "faq" }`. Successful extraction returns to `pending` with `extracted_at`, counts, and chunks populated. This means **extracted and awaiting indexing**.
+
+## Configure Phase 3C indexing
+
+Set `GEMINI_API_KEY` only in the backend environment. Keep `EMBEDDING_PROVIDER=gemini`, `GEMINI_EMBEDDING_MODEL=gemini-embedding-2`, and `GEMINI_EMBEDDING_DIMENSION=768` unless a future migration deliberately changes the stored vector dimension. Never create a `VITE_` Gemini variable. The app starts without the key; indexing then returns a controlled unavailable response. Document chunks use the model's current retrieval-document title/text format; query embeddings remain deferred to Phase 4.
+
+The migration enables pgvector, adds a 768-dimensional vector column and one cosine HNSW index, and exposes only scoped lifecycle RPCs. Apply migrations before testing indexing. Use only synthetic/demo/non-confidential content on the free Gemini tier, do not enable paid billing, and verify the active project quota in Google AI Studio before a public demo.
 
 ## Configure authentication
 

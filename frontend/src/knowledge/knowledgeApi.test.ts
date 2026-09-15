@@ -64,13 +64,20 @@ describe('knowledge source operations', () => {
       extracted_char_count: null,
       chunk_count: 0,
       last_error_code: null,
+      processing_stage: null,
+      indexing_attempts: 0,
+      indexed_at: null,
+      embedding_provider: null,
+      embedding_model: null,
+      embedding_dimension: null,
+      last_failure_stage: null,
     }
     mocks.order.mockResolvedValue({ data: [source], error: null })
 
     await expect(listKnowledgeSources(WORKSPACE_ID)).resolves.toEqual([source])
     expect(mocks.from).toHaveBeenCalledWith('knowledge_sources')
     expect(mocks.select).toHaveBeenCalledWith(
-      'id,title,source_type,status,original_filename,created_at,processing_started_at,processing_attempts,extracted_at,extracted_char_count,chunk_count,last_error_code',
+      'id,title,source_type,status,original_filename,created_at,processing_started_at,processing_attempts,extracted_at,extracted_char_count,chunk_count,last_error_code,processing_stage,indexing_attempts,indexed_at,embedding_provider,embedding_model,embedding_dimension,last_failure_stage',
     )
     expect(mocks.eq).toHaveBeenCalledWith('workspace_id', WORKSPACE_ID)
     expect(mocks.order).toHaveBeenCalledWith('created_at', { ascending: false })

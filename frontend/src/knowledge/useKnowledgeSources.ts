@@ -8,6 +8,7 @@ import {
 } from './knowledgeApi'
 import type { KnowledgeSource } from './types'
 import { KnowledgeProcessingError, processKnowledgeSource } from './processingApi'
+import { indexKnowledgeSource, KnowledgeIndexingError } from './indexingApi'
 
 export function useKnowledgeSources(workspaceId: string) {
   const { accessToken } = useAuth()
@@ -61,6 +62,17 @@ export function useKnowledgeSources(workspaceId: string) {
         if (!accessToken) throw new KnowledgeProcessingError('Your session is no longer active.')
         try {
           const result = await processKnowledgeSource(accessToken, sourceId)
+          await refresh()
+          return result
+        } catch (error) {
+          await refresh()
+          throw error
+        }
+      },
+      indexSource: async (sourceId: string) => {
+        if (!accessToken) throw new KnowledgeIndexingError('Your session is no longer active.')
+        try {
+          const result = await indexKnowledgeSource(accessToken, sourceId)
           await refresh()
           return result
         } catch (error) {

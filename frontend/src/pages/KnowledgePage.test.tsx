@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   addFaq: vi.fn(),
   recoverUpload: vi.fn(),
   processSource: vi.fn(),
+  indexSource: vi.fn(),
   refresh: vi.fn(),
   uploadFile: vi.fn(),
   useKnowledgeSources: vi.fn(),
@@ -39,6 +40,7 @@ describe('KnowledgePage', () => {
       addFaq: mocks.addFaq,
       recoverUpload: mocks.recoverUpload,
       processSource: mocks.processSource,
+      indexSource: mocks.indexSource,
     })
   })
 
@@ -368,6 +370,47 @@ describe('KnowledgePage', () => {
     render(<KnowledgePage />)
 
     expect(screen.getByText('Extracted · awaiting indexing')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /index source/i })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /process source/i })).not.toBeInTheDocument()
+  })
+
+  it('retries indexing failures without offering extraction', async () => {
+    const user = userEvent.setup()
+    mocks.indexSource.mockResolvedValue({ sourceId: '30000000-0000-0000-0000-000000000001', status: 'ready', chunkCount: 1 })
+    mocks.useKnowledgeSources.mockReturnValue({
+      sources: [{
+        id: '30000000-0000-0000-0000-000000000001', title: 'Indexed guide',
+        source_type: 'file', status: 'failed', original_filename: 'guide.pdf',
+        created_at: '2026-09-15T00:00:00Z', extracted_at: '2026-09-15T01:00:00Z',
+        last_failure_stage: 'indexing',
+      }],
+      loading: false, error: null, refresh: mocks.refresh, uploadFile: mocks.uploadFile,
+      addFaq: mocks.addFaq, recoverUpload: mocks.recoverUpload,
+      processSource: mocks.processSource, indexSource: mocks.indexSource,
+    })
+
+    render(<KnowledgePage />)
+    expect(screen.getByText('Indexing failed')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /retry processing/i })).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: /retry indexing/i }))
+    expect(mocks.indexSource).toHaveBeenCalledTimes(1)
+  })
+
+  it('shows indexing for an active indexing stage without duplicate actions', () => {
+    mocks.useKnowledgeSources.mockReturnValue({
+      sources: [{
+        id: '30000000-0000-0000-0000-000000000001', title: 'Indexing guide',
+        source_type: 'file', status: 'processing', original_filename: 'guide.pdf',
+        created_at: '2026-09-15T00:00:00Z', extracted_at: '2026-09-15T01:00:00Z',
+        processing_stage: 'indexing', last_failure_stage: null,
+      }],
+      loading: false, error: null, refresh: mocks.refresh, uploadFile: mocks.uploadFile,
+      addFaq: mocks.addFaq, recoverUpload: mocks.recoverUpload,
+      processSource: mocks.processSource, indexSource: mocks.indexSource,
+    })
+    render(<KnowledgePage />)
+    expect(screen.getByText('Indexing')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /index/i })).not.toBeInTheDocument()
   })
 
   it('shows an approved processing error without altering it', async () => {

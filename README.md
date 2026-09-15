@@ -24,7 +24,7 @@ SupportPilot AI is a full-stack Generative AI customer-support platform being bu
 
 ## Current status
 
-**Phase 3B — secure extraction and deterministic chunking.** Owners/admins can process pending or failed PDF, DOCX, TXT, Markdown, and FAQ sources through authenticated FastAPI. The pipeline retrieves the trusted private object with the same user's JWT, validates actual bytes, extracts and normalizes text, creates citation-aware deterministic chunks, and replaces chunks atomically. Completed extraction returns the source to `pending`, meaning extracted and awaiting indexing. Embeddings, pgvector, RAG, and reliable general source deletion remain intentionally deferred.
+**Phase 3C — secure knowledge indexing.** Owners/admins can upload and extract PDF, DOCX, TXT, Markdown, and FAQ sources, then explicitly index trusted chunks through authenticated FastAPI. A replaceable provider boundary uses Gemini Embedding 2 at 768 dimensions, validates bounded batches, and atomically stores vectors in pgvector only when every chunk hash and vector is valid. Extraction and indexing failures have distinct retry paths; members remain read-only. Phase 4 retrieval/RAG, generation, chat, agents, deployment, and reliable general source deletion remain intentionally deferred.
 
 The initial portfolio-development and public-demo target is **₹0 / $0 infrastructure and AI cost**, using suitable free tiers and replaceable providers.
 
@@ -49,7 +49,7 @@ The applications run locally without Docker, paid services, or external accounts
 - Public health endpoint: `http://127.0.0.1:8000/api/health`
 - Protected identity endpoint: `http://127.0.0.1:8000/api/auth/me`
 
-The product landing page and public health indicator work without an environment file. To enable registration, login, workspaces, and authenticated API verification, copy `.env.example` to `.env` at the repository root and configure the frontend/backend Supabase URL and publishable-key variables. See `docs/SUPABASE_SETUP.md` for the Free-plan setup and smoke-test checklist.
+The product landing page and public health indicator work without an environment file. To enable registration, login, workspaces, and authenticated API verification, copy `.env.example` to `.env` at the repository root and configure the frontend/backend Supabase URL and publishable-key variables. Add a server-only Gemini API key to enable indexing; the rest of the app still starts without it. See `docs/SUPABASE_SETUP.md` for the Free-plan setup and smoke-test checklist.
 
 The Knowledge Base route is `/app/knowledge`. File uploads use the authenticated Supabase client and the private `knowledge-files` bucket. SupportPilot limits each source file to 10 MB, even though the Supabase Free plan currently permits a higher per-file maximum. Owners/admins can recover interrupted uploads and explicitly process pending/failed sources. PDF extraction is limited to 300 pages and does not use OCR, so scanned/image-only PDFs are rejected safely. DOCX files receive ZIP-container safety checks before parsing. TXT and Markdown must be valid UTF-8.
 
