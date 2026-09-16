@@ -30,9 +30,11 @@ insert into triage_test_context select 'turn', turn_id from public.begin_custome
 select ok(public.complete_customer_chat_turn(
     (select value from triage_test_context where key = 'turn'), repeat('a',64),
     'insufficient_evidence', 'Insufficient verified information.', '[]'::jsonb
-), 'Ordinary insufficient evidence is persisted without auto-escalation');
+), 'Insufficient evidence is persisted with an atomic escalation');
 reset role;
-select is((select count(*)::integer from public.escalations), 0, 'No automatic insufficient-evidence escalation in Phase 6A');
+select is((select count(*)::integer from public.escalations), 1, 'Automatic insufficient-evidence escalation exists');
+select is((select trigger_reason from public.escalations), 'insufficient_evidence', 'Unresolved trigger reason preserved');
+select is((select status from public.conversations where id = (select value from triage_test_context where key = 'conversation')), 'open', 'Automatic escalation leaves conversation open');
 
 select ok((select relrowsecurity from pg_class where oid = 'public.escalations'::regclass), 'Escalations have RLS');
 select ok((select relrowsecurity from pg_class where oid = 'public.escalation_triage_runs'::regclass), 'Audit runs have RLS');
@@ -115,6 +117,14 @@ select throws_ok($$select public.fail_escalation_triage(
     '22023', 'Triage failure code is invalid', 'Only safe error codes may be saved');
 select ok(public.fail_escalation_triage((select value from triage_test_context where key = 'escalation'),
     (select value from triage_test_context where key = 'run1'), 'triage_not_configured'), 'AI failure is recorded without removing escalation');
+select is(public.begin_escalation_triage((select value from triage_test_context where key = 'escalation')) ->> 'should_run',
+    'false', 'Failed retry obeys durable backoff');
+reset role;
+alter table public.escalations disable trigger escalations_set_updated_at;
+update public.escalations set updated_at = now() - interval '16 minutes'
+where id = (select value from triage_test_context where key = 'escalation');
+alter table public.escalations enable trigger escalations_set_updated_at;
+set local role service_role;
 insert into triage_test_context select 'run2', (public.begin_escalation_triage(
     (select value from triage_test_context where key = 'escalation')) ->> 'triage_run_id')::uuid;
 reset role;
@@ -171,7 +181,7 @@ update public.conversations set status = 'closed'
 where id = (select value from triage_test_context where key = 'other_conversation');
 set local role service_role;
 select throws_ok($$select public.begin_escalation_triage((select value from triage_test_context where key = 'other_escalation'))$$,
-    '55000', 'Escalation is not eligible for human-request triage', 'Underlying conversation must still be human-requested');
+    '55000', 'Escalation is not eligible for triage', 'Closed conversation is not eligible');
 reset role;
 select * from finish();
 rollback;

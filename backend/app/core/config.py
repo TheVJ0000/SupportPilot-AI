@@ -22,6 +22,8 @@ class Settings(BaseSettings):
     gemini_triage_model: str = "gemini-3.8-flash"
     gemini_embedding_model: str = "gemini-embedding-2"
     gemini_embedding_dimension: Literal[768] = 768
+    resend_api_key: SecretStr | None = None
+    resend_from_email: str | None = None
 
     model_config = SettingsConfigDict(
         env_file=ROOT_ENV_FILE,

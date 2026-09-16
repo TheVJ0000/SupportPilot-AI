@@ -8,10 +8,18 @@ from app.ai.triage.models import CreateEscalationArguments, TriageErrorCode
 from app.escalations.models import BegunEscalationTriage
 
 EscalationRpc = Literal[
-    "begin_escalation_triage", "complete_escalation_triage", "fail_escalation_triage"
+    "begin_escalation_triage",
+    "complete_escalation_triage",
+    "fail_escalation_triage",
+    "list_recoverable_escalations",
 ]
 ALLOWED_ESCALATION_RPCS = frozenset(
-    {"begin_escalation_triage", "complete_escalation_triage", "fail_escalation_triage"}
+    {
+        "begin_escalation_triage",
+        "complete_escalation_triage",
+        "fail_escalation_triage",
+        "list_recoverable_escalations",
+    }
 )
 
 
@@ -41,7 +49,7 @@ class EscalationGateway(Protocol):
 
 
 class SupabaseEscalationGateway:
-    """Server-only secret-key access to exactly three scoped RPCs, never generic SQL."""
+    """Server-only secret-key access to four scoped RPCs, never generic SQL."""
 
     def __init__(self, supabase_url: str, secret_key: str, client: httpx.AsyncClient) -> None:
         if not supabase_url or not secret_key:
@@ -82,6 +90,17 @@ class SupabaseEscalationGateway:
                 raise ValueError("Unexpected escalation")
             return result
         except (TypeError, ValueError, ValidationError):
+            raise EscalationGatewayError() from None
+
+    async def list_recoverable(self, max_results: int) -> list[UUID]:
+        if not 1 <= max_results <= 20:
+            raise EscalationGatewayError()
+        result = await self._rpc("list_recoverable_escalations", {"max_results": max_results})
+        try:
+            if not isinstance(result, list) or len(result) > max_results:
+                raise ValueError()
+            return list(dict.fromkeys(UUID(item) for item in result))
+        except (TypeError, ValueError, AttributeError):
             raise EscalationGatewayError() from None
 
     async def complete_triage(

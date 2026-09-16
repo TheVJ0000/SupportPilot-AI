@@ -46,6 +46,7 @@ async def test_gateway_has_exact_rpc_allowlist_and_no_generic_privileged_queries
         "begin_escalation_triage",
         "complete_escalation_triage",
         "fail_escalation_triage",
+        "list_recoverable_escalations",
     }
     assert len(requests) == 3
     assert json.loads(requests[0].content) == {"target_escalation_id": str(ESCALATION_ID)}

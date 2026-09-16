@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.routes import api_router
 from app.core.config import get_settings
+from app.escalations.automation import lifespan
 
 settings = get_settings()
 
@@ -10,6 +11,7 @@ app = FastAPI(
     title="SupportPilot API",
     description="Backend service for the SupportPilot AI portfolio project.",
     version="0.1.0",
+    lifespan=lifespan,
 )
 
 app.add_middleware(

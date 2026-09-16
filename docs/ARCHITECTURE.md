@@ -20,8 +20,8 @@ flowchart LR
     SVC --> VEC[pgvector]
     SVC --> AI[AI Provider Abstraction]
     AI --> GEM[Gemini API - initial provider]
-    SVC -. eventual .-> JOBS[Background Jobs]
-    SVC -. eventual .-> EMAIL[Email Escalation Notifications]
+    SVC --> JOBS[Bounded In-Process Recovery Worker]
+    JOBS -. optional .-> EMAIL[Resend Email Notifications]
 ```
 
 ### Responsibilities
@@ -34,8 +34,8 @@ flowchart LR
 - **Supabase Storage:** uploaded source documents.
 - **pgvector:** workspace-scoped vector storage and similarity retrieval.
 - **AI provider abstraction:** isolates model-provider-specific generation and embedding logic so providers/models remain configurable and replaceable.
-- **Background jobs:** introduced only when needed for document processing or other asynchronous work and only after rechecking a suitable free tier.
-- **Email notifications:** introduced later for escalation automation only after verifying a suitable zero-cost option.
+- **Background automation:** a bounded FastAPI lifespan worker, with durable work state and eligibility in PostgreSQL rather than an external paid queue.
+- **Email notifications:** optional deterministic Resend integration after checking its Free plan; no provider credentials are required to run the app.
 
 ## Authentication and workspace foundation
 
@@ -50,7 +50,7 @@ Authenticated FastAPI requests flow through one API client that applies the acti
 - uses Supabase Auth's user endpoint with the publishable key for legacy HS256 projects that cannot be verified by JWKS;
 - returns only the verified user ID and optional email from `/api/auth/me`.
 
-No JWT signing secret is requested or stored. `SUPABASE_SECRET_KEY` is not part of ordinary auth, workspace, Knowledge Base, or business RAG request handling. Phase 5A uses it inside a narrow server-side customer-chat RPC gateway because anonymous customers have no Supabase identity; Phase 6A adds a separate gateway restricted to the three internal triage RPCs.
+No JWT signing secret is requested or stored. `SUPABASE_SECRET_KEY` is not part of ordinary auth, workspace, Knowledge Base, or business RAG request handling. Phase 5A uses it inside a narrow server-side customer-chat RPC gateway because anonymous customers have no Supabase identity; Phase 6 adds separate gateways restricted to four triage and four notification lifecycle/listing RPCs. There is no generic privileged query client.
 
 The initial Phase 2A data model contains only:
 
@@ -202,14 +202,17 @@ When evidence is insufficient, the system should not fabricate an answer. It sho
 
 ```mermaid
 flowchart LR
-    HUMAN[Customer Requests Human] --> ATOMIC[Atomic human_requested + pending escalation]
-    ATOMIC --> BACKGROUND[Best-effort FastAPI background task]
-    BACKGROUND --> BEGIN[Locked triage attempt + audit run]
+    HUMAN[Customer Requests Human] --> ATOMIC[Atomic human_requested + unique escalation]
+    UNRESOLVED[Persisted Insufficient-Evidence Answer] --> AUTO[Atomic unique escalation; conversation stays open]
+    ATOMIC --> BACKGROUND[Immediate best-effort task plus recovery worker]
+    AUTO --> BACKGROUND
+    BACKGROUND --> BEGIN[DB eligibility + locked triage attempt + audit run]
     BEGIN --> CONTEXT[Bounded trusted persisted transcript]
     CONTEXT --> AGENT[Gemini requests create_escalation]
     AGENT --> VALIDATE[Validate one tool call and arguments]
     VALIDATE --> TOOL[Explicit application tool executor]
-    TOOL --> COMPLETE[Atomic classification + audit completion]
+    TOOL --> COMPLETE[Atomic classification + audit completion + pending outbox]
+    COMPLETE --> NOTIFY[Bounded optional deterministic email delivery]
     AGENT -. failure .-> FAILED[Durable escalation retained with safe failure code]
 ```
 
@@ -221,9 +224,34 @@ Agent input contains only the trigger reason and recent persisted message roles/
 
 The human-request RPC preserves session authorization and creates/reuses the escalation in the same transaction as `human_requested`. Internal escalation ID/triage status are stripped from the unchanged anonymous public response. Only then is triage scheduled. Missing Gemini configuration marks the attempt `failed / triage_not_configured` where storage is reachable; any AI error leaves the human request and escalation intact. The background runner owns its own clients, does not rely on request-scoped resources, and never exposes triage errors to the customer.
 
-`begin_escalation_triage` locks the escalation, derives its workspace/conversation, and verifies human-request eligibility. Completed attempts and recent processing attempts exit without Gemini. Pending/failed records can start a new audited attempt. Processing older than 15 minutes has its old run marked `failed / stale_triage_recovered` before a new run starts; completion/failure must match the active attempt number, fencing stale workers out. `complete_escalation_triage` atomically updates classification and the matching `create_escalation` audit completion. `fail_escalation_triage` records only allow-listed errors. Audit records never contain prompts, transcript copies, raw payloads, or chain-of-thought.
+`begin_escalation_triage` locks the escalation and derives workspace/conversation eligibility: human-request escalations require a human-requested conversation; insufficient-evidence escalations allow open or human-requested conversations. Closed conversations are excluded. Completed/recent-processing attempts exit without Gemini. All callers, including immediate human-request tasks, obey the same database cap/backoff policy below. Stale processing marks the old run `failed / stale_triage_recovered` before starting a new run; completion/failure must match the active attempt number. `complete_escalation_triage` atomically commits classification, matching audit completion and notification creation through an AFTER trigger in its transaction. A failing outbox insertion rolls back the whole completion, never just the outbox. `fail_escalation_triage` stores only allow-listed codes. Audit records never contain prompts, transcript copies, raw payloads or chain-of-thought.
 
-Both escalation tables have member-only SELECT RLS and no direct anon/browser/service-role writes. The separate privileged gateway exposes only begin/complete/fail RPCs, granted solely to `service_role`, with fixed empty SQL search paths. FastAPI background tasks are best effort, not durable external queue infrastructure: a crash can leave pending/processing records, and a later retry can recover stale processing. No periodic recovery/admin retry UI, notification automation, or insufficient-evidence auto-escalation is wired in Phase 6A. Those remain later work. Use only synthetic/non-confidential demo conversations on Gemini's free tier; no paid fallback or infrastructure was added.
+Escalation, audit and outbox tables have member-only SELECT RLS and no direct anon/browser/service-role writes. Scoped RPCs are granted solely to `service_role`, with fixed empty SQL search paths. Migration 010's AFTER INSERT message trigger creates/reuses an insufficient-evidence escalation in the answer-persistence transaction, covering streaming, non-streaming and retries without waiting for triage. It does not change conversation status. A later explicit human request reuses the escalation, preserves classification/audit and stops AI turns.
+
+### Durable recovery policy
+
+The lifespan worker starts only with server-side Supabase URL/secret configuration, runs immediately then sleeps 60 seconds, and is canceled/awaited before clients close. Each cycle handles at most 10 triage IDs, concurrency two, then at most 10 notification IDs, concurrency two. Exceptions never crash API requests or log provider data. Missing Gemini skips both triage listing and claiming; missing/locally-invalid Resend configuration skips notification listing/claiming. The existing immediate human-request background task may record one `triage_not_configured` failure; after configuration/restart the worker recovers eligible work.
+
+Database listing limits are 1–20; both list and locked begin recheck the same policy, protecting against listing/claim races and multiple API instances. Work is best effort while the process is alive; PostgreSQL provides durability. There is no external queue or exactly-once email guarantee.
+
+| Work | Automatic eligibility | Excluded |
+| --- | --- | --- |
+| Triage | Attempts <3; pending, processing stale ≥15 minutes, or failed ≥15 minutes with `triage_not_configured`, `triage_rate_limited`, `triage_provider_unavailable`, `triage_failed` | Completed, recent processing, auth/invalid-tool failure, closed/resolved escalation, closed conversation, cap exhausted |
+| Notification | Attempts <3; pending, sending stale ≥15 minutes, or failed ≥15 minutes with `notification_rate_limited`, `notification_provider_unavailable`, `notification_failed`; related triage must be completed | Sent, recent sending, auth/configuration/no-recipient/delivery-unknown failure, cap exhausted |
+
+Cap-exhausted stale records remain durable for later operational review; Phase 7 manual-recovery UI is not implemented. SQL claim checks apply to immediate tasks too, so repeated human requests cannot burn unlimited AI attempts or bypass backoff. No retries are driven by customer input or Gemini-selected IDs.
+
+### Deterministic notification outbox
+
+`escalation_notifications` has one row per escalation, composite workspace FK, consistent `pending/sending/sent/failed` states, attempts, safe error code, provider/message ID, delivery/sent timestamps and immutable-in-lifecycle first delivery time. Completion triggers atomically enqueue pending state; migration 010 also enqueues already-completed Phase 6A triage. No recipient snapshot, customer content, AI summary, prompt or session information is stored. Members may read only their workspace's delivery state. The server-only notification begin RPC locks the row, rechecks eligibility/completed triage, increments attempts and derives at most 20 distinct normalized, verified, non-deleted owner/admin auth emails from that workspace. Missing recipients records `notification_no_recipients`, with no automatic retry. Safe context is only notification ID, workspace name, category, priority, recipient emails and attempt number. Complete/fail require the active attempt number and completed related escalation; stale workers cannot overwrite a newer attempt. Sent completion can replay only matching attempt/provider/message metadata.
+
+The replaceable `EscalationNotifier` protocol has only optional Resend implemented. Server-only `RESEND_API_KEY` is `SecretStr`; `RESEND_FROM_EMAIL` is optional and syntax-checked without blocking startup. Existing `httpx` sends to fixed HTTPS `/emails` with Bearer, JSON, `SupportPilot-AI/0.1` and deterministic `Idempotency-Key`. Copy is plain deterministic text: workspace name, category, priority and generic sign-in instruction, never the triage summary or customer content. Only trusted managers receive mail: the first normalized address is `to`, remaining addresses are `bcc`; the configured sender is not added as a recipient.
+
+Within one send, up to two retries wait 0.25/0.5 seconds for 429, 408, 5xx or temporary transport failures, with identical key/body. 401/403 map to auth failure; other 4xx/redirects map to configuration failure; 409 maps to delivery unknown rather than changing the key. Connect/pool failures known to precede acceptance map to provider unavailable. Uncertain read/write failures, exhausted 408/5xx, malformed success, cancellation, or unconfirmed DB completion conservatively map to delivery unknown and do not receive long-delay automatic retries. Prior ambiguity remains tracked even if the last response is 429. This avoids treating an accepted-but-unacknowledged send as a safe new delivery.
+
+Database sent state is the long-term duplicate guard. [Resend keys last 24 hours](https://resend.com/docs/dashboard/emails/idempotency-keys); SQL refuses replay after 23 hours from first delivery start, records delivery unknown and retains state for review. Changed recipients/copy/config under the same key can produce a provider conflict, also requiring review. Neither provider idempotency nor the outbox claims mathematically exactly-once delivery. Notification failure never reverts completed triage or the customer conversation. No recipients, raw provider errors or secrets are logged.
+
+The [official Resend Free plan](https://resend.com/pricing) was rechecked for $0, 3,000 transactional emails/month, 100/day and three domains. Its [test sender restriction](https://resend.com/docs/api-reference/errors) permits `onboarding@resend.dev` only to the account email; other recipients require an already-owned verified sender domain. Do not buy a domain, enable billing/pay-as-you-go or claim untested live delivery. Leave credentials blank to keep SupportPilot itself runnable at ₹0. Only synthetic/non-confidential demo conversations go to Gemini's free tier. No LangGraph, additional tools, Slack, CRM, dashboard/widget, deployment, Redis, Celery or paid queue was added.
 
 ## Multi-tenancy and isolation
 
@@ -258,4 +286,4 @@ Generation and embeddings should be called through application interfaces rather
 
 ## Database scope
 
-Phase 3C completes ingestion with explicit lifecycle metadata, replaceable embeddings, 768-dimensional pgvector storage, and one cosine HNSW index. Phase 4 adds authenticated workspace-scoped semantic retrieval, evidence-sufficiency decisions, grounded structured generation, and server-validated citations. Phase 5A adds `workspace_chat_configs`, `customer_sessions`, `conversations`, `conversation_turns`, `messages`, and `message_citations` plus narrowly granted customer-chat RPCs; Phase 5B.3 adds message feedback. Streaming remains transport-only and adds no database table or migration. Phase 6A adds `escalations` and `escalation_triage_runs`, composite workspace integrity, consistent triage states, and atomic server-only lifecycle RPCs in a new migration. Analytics remain deferred.
+Phase 3C completes ingestion with explicit lifecycle metadata, replaceable embeddings, 768-dimensional pgvector storage, and one cosine HNSW index. Phase 4 adds authenticated workspace-scoped retrieval, evidence-sufficiency decisions, grounded generation and trusted citations. Phase 5 adds anonymous customer conversation/turn/message/citation/feedback persistence plus narrow session-scoped RPCs. Streaming remains transport-only. Phase 6A adds escalation/audit tables and trusted lifecycle RPCs; Phase 6B adds message/outbox triggers, notification state and shared database recovery/claim eligibility in migration 010 without modifying earlier migrations. Analytics remain deferred.
