@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   getCustomerConversation: vi.fn(),
   requestCustomerHumanSupport: vi.fn(),
   setCustomerMessageFeedback: vi.fn(),
+  streamDriver: vi.fn(),
   submitCustomerTurn: vi.fn(),
 }))
 
@@ -21,7 +22,28 @@ vi.mock('../chat/customerChatApi', async (importOriginal) => {
     getCustomerConversation: mocks.getCustomerConversation,
     requestCustomerHumanSupport: mocks.requestCustomerHumanSupport,
     setCustomerMessageFeedback: mocks.setCustomerMessageFeedback,
-    submitCustomerTurn: mocks.submitCustomerTurn,
+    streamCustomerTurn: async (...args: Parameters<typeof actual.streamCustomerTurn>) => {
+      if (mocks.streamDriver.getMockImplementation()) {
+        return mocks.streamDriver(...args)
+      }
+      const [conversationId, token, clientMessageId, message, handlers] = args
+      const result = await mocks.submitCustomerTurn(
+        conversationId,
+        token,
+        clientMessageId,
+        message,
+      )
+      if (!result.is_replay) {
+        handlers.onStarted({
+          conversation_id: result.conversation_id,
+          turn_id: result.turn_id,
+          client_message_id: result.client_message_id,
+        })
+        if (result.answer) handlers.onDelta(result.answer)
+      }
+      handlers.onComplete(result)
+      return result
+    },
   }
 })
 
@@ -79,6 +101,7 @@ function renderChat() {
 describe('hosted customer chat page', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mocks.streamDriver.mockReset()
     localStorage.clear()
     mocks.createCustomerSession.mockResolvedValue(createdSession())
     mocks.getCustomerConversation.mockResolvedValue(conversation())
@@ -221,6 +244,63 @@ describe('hosted customer chat page', () => {
     expect(await screen.findByText('Use the account reset link.')).toBeInTheDocument()
   })
 
+  it('shows one provisional stream before completion and adds citations and feedback only after', async () => {
+    let finish!: () => void
+    const gate = new Promise<void>((resolve) => {
+      finish = resolve
+    })
+    mocks.streamDriver.mockImplementation(
+      async (_conversationId, _token, _clientMessageId, _message, handlers) => {
+        handlers.onStarted({
+          conversation_id: CONVERSATION_ID,
+          turn_id: TURN_ID,
+          client_message_id: CLIENT_MESSAGE_ID,
+        })
+        handlers.onDelta('Reset links ')
+        await gate
+        handlers.onDelta('expire after 30 minutes.')
+        const result = {
+          conversation_id: CONVERSATION_ID,
+          turn_id: TURN_ID,
+          message_id: ASSISTANT_MESSAGE_ID,
+          client_message_id: CLIENT_MESSAGE_ID,
+          status: 'answered' as const,
+          answer: 'Reset links expire after 30 minutes.',
+          citations: [
+            {
+              source_id: '70000000-0000-4000-8000-000000000001',
+              source_title: 'Reset FAQ',
+              source_type: 'faq' as const,
+              chunk_index: 0,
+              locator: { kind: 'faq' as const },
+            },
+          ],
+          is_replay: false,
+        }
+        handlers.onComplete(result)
+        return result
+      },
+    )
+    const user = userEvent.setup()
+    renderChat()
+
+    await user.type(await screen.findByLabelText('Message'), 'How long does reset last?')
+    await user.click(screen.getByRole('button', { name: 'Send' }))
+
+    expect(await screen.findByText('Reset links')).toBeInTheDocument()
+    expect(screen.queryByText('Reset FAQ — FAQ')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Mark this answer as helpful' })).toBeNull()
+
+    await act(async () => finish())
+
+    expect(await screen.findByText('Reset links expire after 30 minutes.')).toBeInTheDocument()
+    expect(
+      screen.getByText((_text, node) => node?.tagName === 'LI' && node.textContent?.includes('Reset FAQ — FAQ') === true),
+    ).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Mark this answer as helpful' })).toBeVisible()
+    expect(screen.queryByLabelText('Assistant response in progress')).toBeNull()
+  })
+
   it('enforces the 2,000-character composer limit', async () => {
     renderChat()
     const composer = await screen.findByLabelText('Message')
@@ -313,6 +393,64 @@ describe('hosted customer chat page', () => {
     expect(mocks.submitCustomerTurn.mock.calls[0][2]).toBe(CLIENT_MESSAGE_ID)
     expect(mocks.submitCustomerTurn.mock.calls[1][2]).toBe(CLIENT_MESSAGE_ID)
     expect(crypto.randomUUID).toHaveBeenCalledOnce()
+  })
+
+  it('removes interrupted provisional text and retries with the same message ID', async () => {
+    let interrupt!: (error: Error) => void
+    const interruption = new Promise<never>((_resolve, reject) => {
+      interrupt = reject
+    })
+    mocks.streamDriver
+      .mockImplementationOnce(
+        async (_conversationId, _token, _clientMessageId, _message, handlers) => {
+          handlers.onStarted({
+            conversation_id: CONVERSATION_ID,
+            turn_id: TURN_ID,
+            client_message_id: CLIENT_MESSAGE_ID,
+          })
+          handlers.onDelta('Unfinished private text')
+          return interruption
+        },
+      )
+      .mockImplementationOnce(
+        async (_conversationId, _token, _clientMessageId, _message, handlers) => {
+          const result = {
+            conversation_id: CONVERSATION_ID,
+            turn_id: TURN_ID,
+            message_id: ASSISTANT_MESSAGE_ID,
+            client_message_id: CLIENT_MESSAGE_ID,
+            status: 'answered' as const,
+            answer: 'Recovered authoritative answer.',
+            citations: [],
+            is_replay: false,
+          }
+          handlers.onStarted({
+            conversation_id: CONVERSATION_ID,
+            turn_id: TURN_ID,
+            client_message_id: CLIENT_MESSAGE_ID,
+          })
+          handlers.onDelta(result.answer)
+          handlers.onComplete(result)
+          return result
+        },
+      )
+    const user = userEvent.setup()
+    renderChat()
+
+    await user.type(await screen.findByLabelText('Message'), 'Please retry safely')
+    await user.click(screen.getByRole('button', { name: 'Send' }))
+    expect(await screen.findByText('Unfinished private text')).toBeInTheDocument()
+
+    await act(async () => interrupt(new Error('connection closed')))
+
+    expect(await screen.findByRole('button', { name: 'Retry' })).toBeInTheDocument()
+    expect(screen.queryByText('Unfinished private text')).toBeNull()
+    await user.click(screen.getByRole('button', { name: 'Retry' }))
+
+    expect(await screen.findByText('Recovered authoritative answer.')).toBeInTheDocument()
+    expect(mocks.streamDriver).toHaveBeenCalledTimes(2)
+    expect(mocks.streamDriver.mock.calls[0][2]).toBe(CLIENT_MESSAGE_ID)
+    expect(mocks.streamDriver.mock.calls[1][2]).toBe(CLIENT_MESSAGE_ID)
   })
 
   it('recreates an invalid session once while preserving the outbound message ID', async () => {
@@ -455,6 +593,25 @@ describe('hosted customer chat page', () => {
     expect(composer).toBeDisabled()
     expect(screen.getByRole('button', { name: 'Send' })).toBeDisabled()
     expect(screen.queryByRole('button', { name: 'Request a human' })).not.toBeInTheDocument()
+  })
+
+  it('blocks an already-open human confirmation while a turn is streaming', async () => {
+    let rejectTurn!: (reason: Error) => void
+    mocks.submitCustomerTurn.mockReturnValue(new Promise((_resolve, reject) => {
+      rejectTurn = reject
+    }))
+    const user = userEvent.setup()
+    renderChat()
+    const composer = await screen.findByLabelText('Message')
+    await user.click(screen.getByRole('button', { name: 'Request a human' }))
+    await user.type(composer, 'How do I reset my password?')
+    await user.click(screen.getByRole('button', { name: 'Send' }))
+
+    expect(screen.getByRole('button', { name: 'Confirm' })).toBeDisabled()
+    await user.click(screen.getByRole('button', { name: 'Confirm' }))
+    expect(mocks.requestCustomerHumanSupport).not.toHaveBeenCalled()
+    await act(async () => rejectTurn(new Error('stream interrupted')))
+    expect(screen.getByRole('button', { name: 'Confirm' })).toBeEnabled()
   })
 
   it('restores human-requested state while leaving assistant feedback usable', async () => {

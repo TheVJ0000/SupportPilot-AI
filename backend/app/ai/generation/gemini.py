@@ -1,6 +1,6 @@
 import asyncio
 import json
-from collections.abc import Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
 from typing import Any
 
 from google import genai
@@ -8,7 +8,19 @@ from google.genai import types
 from pydantic import ValidationError
 
 from app.ai.generation.errors import GenerationProviderError
-from app.ai.generation.models import GenerationEvidence, GroundedGenerationDecision
+from app.ai.generation.models import (
+    GenerationAnswerDelta,
+    GenerationDecisionEvent,
+    GenerationEvidence,
+    GenerationStreamComplete,
+    GenerationStreamEvent,
+    GroundedGenerationDecision,
+    canonicalize_evidence_ids,
+)
+from app.ai.generation.streaming_json import (
+    GroundedGenerationJsonStreamParser,
+    IncrementalGenerationJsonError,
+)
 
 MAX_OUTPUT_TOKENS = 1200
 MAX_RETRIES = 2
@@ -80,6 +92,16 @@ class GeminiGenerationProvider:
         )
         return types.Content(role="user", parts=[types.Part(text=payload)])
 
+    @staticmethod
+    def _config() -> types.GenerateContentConfig:
+        return types.GenerateContentConfig(
+            system_instruction=GROUNDING_SYSTEM_INSTRUCTION,
+            thinking_config=types.ThinkingConfig(thinking_level=types.ThinkingLevel.LOW),
+            max_output_tokens=MAX_OUTPUT_TOKENS,
+            response_mime_type="application/json",
+            response_schema=GroundedGenerationDecision,
+        )
+
     async def generate_grounded_answer(
         self,
         question: str,
@@ -94,15 +116,7 @@ class GeminiGenerationProvider:
                 response = await self._client.aio.models.generate_content(
                     model=self.model_name,
                     contents=self._content(question, evidence),
-                    config=types.GenerateContentConfig(
-                        system_instruction=GROUNDING_SYSTEM_INSTRUCTION,
-                        thinking_config=types.ThinkingConfig(
-                            thinking_level=types.ThinkingLevel.LOW
-                        ),
-                        max_output_tokens=MAX_OUTPUT_TOKENS,
-                        response_mime_type="application/json",
-                        response_schema=GroundedGenerationDecision,
-                    ),
+                    config=self._config(),
                 )
                 break
             except Exception as error:
@@ -116,3 +130,79 @@ class GeminiGenerationProvider:
             return GroundedGenerationDecision.model_validate(getattr(response, "parsed", None))
         except (TypeError, ValidationError, ValueError):
             raise GenerationProviderError("generation_invalid_response") from None
+
+    async def stream_grounded_answer(
+        self,
+        question: str,
+        evidence: list[GenerationEvidence],
+    ) -> AsyncIterator[GenerationStreamEvent]:
+        if not question.strip() or not 1 <= len(evidence) <= 8:
+            raise GenerationProviderError("generation_failed")
+
+        available_ids = [item.evidence_id for item in evidence]
+        for attempt in range(MAX_RETRIES + 1):
+            received_provider_chunk = False
+            parser = GroundedGenerationJsonStreamParser()
+            validated_prefix: GenerationDecisionEvent | None = None
+            emitted_answer_parts: list[str] = []
+            try:
+                stream = await self._client.aio.models.generate_content_stream(
+                    model=self.model_name,
+                    contents=self._content(question, evidence),
+                    config=self._config(),
+                )
+                async for chunk in stream:
+                    received_provider_chunk = True
+                    text = getattr(chunk, "text", None)
+                    if not isinstance(text, str):
+                        raise IncrementalGenerationJsonError("Provider chunk did not contain text")
+                    for event in parser.feed(text):
+                        if isinstance(event, GenerationDecisionEvent):
+                            canonical_ids = canonicalize_evidence_ids(event, available_ids)
+                            validated_prefix = GenerationDecisionEvent(
+                                decision=event.decision,
+                                evidence_ids=canonical_ids,
+                            )
+                            yield validated_prefix
+                        elif isinstance(event, GenerationAnswerDelta):
+                            if (
+                                validated_prefix is None
+                                or validated_prefix.decision != "answerable"
+                            ):
+                                raise IncrementalGenerationJsonError(
+                                    "Answer text arrived before a valid grounded prefix"
+                                )
+                            emitted_answer_parts.append(event.text)
+                            yield event
+
+                parsed = parser.finish()
+                if validated_prefix is None:
+                    raise IncrementalGenerationJsonError("Missing grounded decision prefix")
+                final = GroundedGenerationDecision.model_validate_json(parsed.raw_json)
+                final_prefix = GenerationDecisionEvent(
+                    decision=final.decision,
+                    evidence_ids=final.evidence_ids,
+                )
+                final_ids = canonicalize_evidence_ids(final_prefix, available_ids)
+                emitted_answer = "".join(emitted_answer_parts)
+                if (
+                    final.decision != validated_prefix.decision
+                    or final_ids != validated_prefix.evidence_ids
+                    or final.answer != parsed.answer
+                    or final.answer != emitted_answer
+                ):
+                    raise IncrementalGenerationJsonError(
+                        "Final structured output did not match the streamed result"
+                    )
+                yield GenerationStreamComplete(result=final)
+                return
+            except GenerationProviderError:
+                raise
+            except (IncrementalGenerationJsonError, TypeError, ValidationError, ValueError):
+                raise GenerationProviderError("generation_invalid_response") from None
+            except Exception as error:
+                error_code, transient = self._map_error(error)
+                if transient and not received_provider_chunk and attempt < MAX_RETRIES:
+                    await self._sleep(0.25 * (2**attempt))
+                    continue
+                raise GenerationProviderError(error_code) from None

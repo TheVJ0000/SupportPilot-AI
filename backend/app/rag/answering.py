@@ -1,4 +1,5 @@
 import json
+from dataclasses import dataclass
 from http import HTTPStatus
 from uuid import UUID
 
@@ -6,9 +7,19 @@ from pydantic import ValidationError
 
 from app.ai.generation.base import GenerationProvider
 from app.ai.generation.errors import GenerationProviderError
-from app.ai.generation.models import GenerationEvidence, GroundedGenerationDecision
+from app.ai.generation.models import (
+    GenerationDecisionEvent,
+    GenerationEvidence,
+    GroundedGenerationDecision,
+    canonicalize_evidence_ids,
+)
 from app.rag.errors import RagAnswerHttpError
-from app.rag.models import GroundedAnswerResponse, RetrievalMatch, TrustedCitation
+from app.rag.models import (
+    GroundedAnswerResponse,
+    RetrievalMatch,
+    RetrievalResponse,
+    TrustedCitation,
+)
 from app.rag.service import KnowledgeRetrievalService
 
 MAX_EVIDENCE_CHARS = 20_000
@@ -26,7 +37,15 @@ _GENERATION_MESSAGES = {
 }
 
 
-def _insufficient_response(workspace_id: UUID, question: str) -> GroundedAnswerResponse:
+@dataclass(frozen=True)
+class PreparedGroundedEvidence:
+    workspace_id: UUID
+    question: str
+    matches: list[RetrievalMatch]
+    evidence: list[GenerationEvidence]
+
+
+def insufficient_response(workspace_id: UUID, question: str) -> GroundedAnswerResponse:
     return GroundedAnswerResponse(
         workspace_id=workspace_id,
         question=question,
@@ -71,6 +90,80 @@ def _evidence_character_count(evidence: list[GenerationEvidence]) -> int:
     )
 
 
+def prepare_grounded_evidence(
+    retrieval: RetrievalResponse,
+) -> PreparedGroundedEvidence | None:
+    """Apply the shared evidence labels and generation bounds for all RAG flows."""
+
+    if not retrieval.matches:
+        return None
+    if len(retrieval.matches) > MAX_EVIDENCE_ITEMS or (
+        sum(len(match.content) for match in retrieval.matches) > MAX_EVIDENCE_CHARS
+    ):
+        raise RagAnswerHttpError("Retrieved evidence exceeds the safe generation limit.")
+    try:
+        labeled_evidence = [
+            GenerationEvidence(
+                evidence_id=f"E{index}",
+                source_title=match.source_title,
+                source_type=match.source_type,
+                locator=dict(match.locator),
+                content=match.content,
+            )
+            for index, match in enumerate(retrieval.matches, start=1)
+        ]
+    except (TypeError, ValidationError, ValueError) as error:
+        raise RagAnswerHttpError("Retrieved evidence is invalid for generation.") from error
+    if _evidence_character_count(labeled_evidence) > MAX_EVIDENCE_CHARS:
+        raise RagAnswerHttpError("Retrieved evidence exceeds the safe generation limit.")
+    return PreparedGroundedEvidence(
+        workspace_id=retrieval.workspace_id,
+        question=retrieval.question,
+        matches=retrieval.matches,
+        evidence=labeled_evidence,
+    )
+
+
+def grounded_response_from_decision(
+    prepared: PreparedGroundedEvidence,
+    raw_decision: GroundedGenerationDecision,
+) -> GroundedAnswerResponse:
+    """Validate a provider decision and rebuild citations only from retrieved metadata."""
+
+    try:
+        decision = GroundedGenerationDecision.model_validate(raw_decision)
+    except (TypeError, ValidationError, ValueError) as error:
+        raise _generation_error("generation_invalid_response") from error
+    if decision.decision == "insufficient_evidence":
+        return insufficient_response(prepared.workspace_id, prepared.question)
+
+    matches_by_id = {
+        evidence.evidence_id: match
+        for evidence, match in zip(prepared.evidence, prepared.matches, strict=True)
+    }
+    try:
+        canonical_ids = canonicalize_evidence_ids(
+            GenerationDecisionEvent(
+                decision=decision.decision,
+                evidence_ids=decision.evidence_ids,
+            ),
+            list(matches_by_id),
+        )
+    except (TypeError, ValidationError, ValueError) as error:
+        raise _generation_error("generation_invalid_response") from error
+    citations = [_trusted_citation(matches_by_id[evidence_id]) for evidence_id in canonical_ids]
+    if not citations:
+        raise _generation_error("generation_invalid_response")
+
+    return GroundedAnswerResponse(
+        workspace_id=prepared.workspace_id,
+        question=prepared.question,
+        status="answered",
+        answer=decision.answer,
+        citations=citations,
+    )
+
+
 class RagAnswerService:
     """Coordinates one retrieval and one bounded, grounded generation decision."""
 
@@ -84,65 +177,17 @@ class RagAnswerService:
 
     async def answer(self, workspace_id: UUID, question: str) -> GroundedAnswerResponse:
         retrieval = await self._retrieval_service.retrieve(workspace_id, question)
-        if not retrieval.matches:
-            return _insufficient_response(workspace_id, retrieval.question)
-        if len(retrieval.matches) > MAX_EVIDENCE_ITEMS or (
-            sum(len(match.content) for match in retrieval.matches) > MAX_EVIDENCE_CHARS
-        ):
-            raise RagAnswerHttpError("Retrieved evidence exceeds the safe generation limit.")
-
-        try:
-            labeled_evidence = [
-                GenerationEvidence(
-                    evidence_id=f"E{index}",
-                    source_title=match.source_title,
-                    source_type=match.source_type,
-                    locator=dict(match.locator),
-                    content=match.content,
-                )
-                for index, match in enumerate(retrieval.matches, start=1)
-            ]
-        except (TypeError, ValidationError, ValueError) as error:
-            raise RagAnswerHttpError("Retrieved evidence is invalid for generation.") from error
-        if _evidence_character_count(labeled_evidence) > MAX_EVIDENCE_CHARS:
-            raise RagAnswerHttpError("Retrieved evidence exceeds the safe generation limit.")
+        prepared = prepare_grounded_evidence(retrieval)
+        if prepared is None:
+            return insufficient_response(workspace_id, retrieval.question)
 
         try:
             raw_decision = await self._generation_provider.generate_grounded_answer(
                 retrieval.question,
-                labeled_evidence,
+                prepared.evidence,
             )
-            decision = GroundedGenerationDecision.model_validate(raw_decision)
         except GenerationProviderError as error:
             raise _generation_error(error.error_code) from error
-        except (TypeError, ValidationError, ValueError) as error:
-            raise _generation_error("generation_invalid_response") from error
         except Exception as error:
             raise _generation_error("generation_failed") from error
-
-        if decision.decision == "insufficient_evidence":
-            return _insufficient_response(workspace_id, retrieval.question)
-
-        matches_by_id = {
-            evidence.evidence_id: match
-            for evidence, match in zip(labeled_evidence, retrieval.matches, strict=True)
-        }
-        requested_ids = set(decision.evidence_ids)
-        if not requested_ids.issubset(matches_by_id):
-            raise _generation_error("generation_invalid_response")
-
-        citations = [
-            _trusted_citation(match)
-            for evidence_id, match in matches_by_id.items()
-            if evidence_id in requested_ids
-        ]
-        if not citations:
-            raise _generation_error("generation_invalid_response")
-
-        return GroundedAnswerResponse(
-            workspace_id=workspace_id,
-            question=retrieval.question,
-            status="answered",
-            answer=decision.answer,
-            citations=citations,
-        )
+        return grounded_response_from_decision(prepared, raw_decision)

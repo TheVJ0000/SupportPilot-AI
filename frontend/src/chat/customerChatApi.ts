@@ -56,6 +56,24 @@ export interface CustomerTurnResult {
   is_replay: boolean
 }
 
+export interface CustomerTurnStartedEvent {
+  conversation_id: string
+  turn_id: string
+  client_message_id: string
+}
+
+export type CustomerTurnStreamEvent =
+  | { type: 'started'; data: CustomerTurnStartedEvent }
+  | { type: 'delta'; data: { text: string } }
+  | { type: 'complete'; data: CustomerTurnResult }
+  | { type: 'error'; data: { code: 'stream_failed'; message: string } }
+
+export interface CustomerTurnStreamHandlers {
+  onStarted: (event: CustomerTurnStartedEvent) => void
+  onDelta: (text: string) => void
+  onComplete: (result: CustomerTurnResult) => void
+}
+
 export interface CustomerFeedbackResult {
   message_id: string
   rating: FeedbackRating
@@ -211,6 +229,119 @@ function parseTurn(value: unknown): CustomerTurnResult {
   return value as unknown as CustomerTurnResult
 }
 
+function hasOnlyKeys(value: Record<string, unknown>, keys: string[]): boolean {
+  const actual = Object.keys(value).sort()
+  const expected = [...keys].sort()
+  return actual.length === expected.length && actual.every((key, index) => key === expected[index])
+}
+
+function parseStreamFrame(frame: string): CustomerTurnStreamEvent {
+  let eventName: string | null = null
+  let dataText: string | null = null
+  for (const line of frame.split(/\r?\n/)) {
+    if (line === '') continue
+    if (line.startsWith('event:')) {
+      if (eventName !== null) throw new CustomerChatApiError('unavailable')
+      eventName = line.slice('event:'.length).trim()
+    } else if (line.startsWith('data:')) {
+      if (dataText !== null) throw new CustomerChatApiError('unavailable')
+      dataText = line.slice('data:'.length).trimStart()
+    } else {
+      throw new CustomerChatApiError('unavailable')
+    }
+  }
+  if (eventName === null || dataText === null) {
+    throw new CustomerChatApiError('unavailable')
+  }
+  let value: unknown
+  try {
+    value = JSON.parse(dataText)
+  } catch {
+    throw new CustomerChatApiError('unavailable')
+  }
+  if (!isRecord(value)) throw new CustomerChatApiError('unavailable')
+
+  if (eventName === 'started') {
+    if (
+      !hasOnlyKeys(value, ['conversation_id', 'turn_id', 'client_message_id']) ||
+      !isUuid(value.conversation_id) ||
+      !isUuid(value.turn_id) ||
+      !isUuid(value.client_message_id)
+    ) {
+      throw new CustomerChatApiError('unavailable')
+    }
+    return { type: 'started', data: value as unknown as CustomerTurnStartedEvent }
+  }
+  if (eventName === 'delta') {
+    if (!hasOnlyKeys(value, ['text']) || typeof value.text !== 'string' || value.text.length < 1) {
+      throw new CustomerChatApiError('unavailable')
+    }
+    return { type: 'delta', data: { text: value.text } }
+  }
+  if (eventName === 'complete') {
+    return { type: 'complete', data: parseTurn(value) }
+  }
+  if (eventName === 'error') {
+    if (
+      !hasOnlyKeys(value, ['code', 'message']) ||
+      value.code !== 'stream_failed' ||
+      typeof value.message !== 'string'
+    ) {
+      throw new CustomerChatApiError('unavailable')
+    }
+    return { type: 'error', data: { code: value.code, message: value.message } }
+  }
+  throw new CustomerChatApiError('unavailable')
+}
+
+function takeCompleteFrames(buffer: string): { frames: string[]; remainder: string } {
+  const frames: string[] = []
+  let remainder = buffer
+  while (true) {
+    const boundary = /\r?\n\r?\n/.exec(remainder)
+    if (boundary === null || boundary.index === undefined) break
+    frames.push(remainder.slice(0, boundary.index))
+    remainder = remainder.slice(boundary.index + boundary[0].length)
+  }
+  return { frames, remainder }
+}
+
+export async function* parseCustomerTurnEventStream(
+  body: ReadableStream<Uint8Array>,
+): AsyncGenerator<CustomerTurnStreamEvent> {
+  const reader = body.getReader()
+  const decoder = new TextDecoder('utf-8', { fatal: true })
+  let buffer = ''
+  try {
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      try {
+        buffer += decoder.decode(value, { stream: true })
+      } catch {
+        throw new CustomerChatApiError('unavailable')
+      }
+      const parsed = takeCompleteFrames(buffer)
+      buffer = parsed.remainder
+      for (const frame of parsed.frames) {
+        if (frame.length > 0) yield parseStreamFrame(frame)
+      }
+    }
+    try {
+      buffer += decoder.decode()
+    } catch {
+      throw new CustomerChatApiError('unavailable')
+    }
+    const parsed = takeCompleteFrames(buffer)
+    for (const frame of parsed.frames) {
+      if (frame.length > 0) yield parseStreamFrame(frame)
+    }
+    if (parsed.remainder.trim().length > 0) yield parseStreamFrame(parsed.remainder)
+  } finally {
+    reader.releaseLock()
+  }
+}
+
 function parseFeedback(value: unknown): CustomerFeedbackResult {
   if (
     !isRecord(value) ||
@@ -302,6 +433,58 @@ export async function submitCustomerTurn(
     },
   )
   return parseTurn(await readResponse(response))
+}
+
+export async function streamCustomerTurn(
+  conversationId: string,
+  sessionToken: string,
+  clientMessageId: string,
+  message: string,
+  handlers: CustomerTurnStreamHandlers,
+  signal?: AbortSignal,
+): Promise<CustomerTurnResult> {
+  const response = await safeFetch(
+    `${apiBaseUrl}/api/chat/conversations/${encodeURIComponent(conversationId)}/turns/stream`,
+    {
+      method: 'POST',
+      headers: {
+        Accept: 'text/event-stream',
+        'Content-Type': 'application/json',
+        [CUSTOMER_SESSION_HEADER]: sessionToken,
+      },
+      body: JSON.stringify({ client_message_id: clientMessageId, message }),
+      signal,
+    },
+  )
+  if (response.status === 401) throw new CustomerChatApiError('invalid-session')
+  if (!response.ok || !response.body) throw new CustomerChatApiError('unavailable')
+  if (!response.headers.get('content-type')?.toLowerCase().includes('text/event-stream')) {
+    throw new CustomerChatApiError('unavailable')
+  }
+
+  let state: 'initial' | 'started' | 'complete' = 'initial'
+  let completed: CustomerTurnResult | null = null
+  for await (const event of parseCustomerTurnEventStream(response.body)) {
+    if (event.type === 'started') {
+      if (state !== 'initial') throw new CustomerChatApiError('unavailable')
+      state = 'started'
+      handlers.onStarted(event.data)
+    } else if (event.type === 'delta') {
+      if (state !== 'started') throw new CustomerChatApiError('unavailable')
+      handlers.onDelta(event.data.text)
+    } else if (event.type === 'complete') {
+      if (state === 'complete') throw new CustomerChatApiError('unavailable')
+      state = 'complete'
+      completed = event.data
+    } else {
+      throw new CustomerChatApiError('unavailable')
+    }
+  }
+  if (state !== 'complete' || completed === null) {
+    throw new CustomerChatApiError('unavailable')
+  }
+  handlers.onComplete(completed)
+  return completed
 }
 
 export async function setCustomerMessageFeedback(

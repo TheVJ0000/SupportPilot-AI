@@ -5,6 +5,7 @@ from uuid import UUID
 
 from pydantic import AwareDatetime, BaseModel, ConfigDict, model_validator
 
+from app.rag.answering import PreparedGroundedEvidence
 from app.rag.models import TrustedCitation
 
 
@@ -138,3 +139,40 @@ class CustomerChatSessionResult:
     session_token: str = field(repr=False)
     workspace_name: str
     expires_at: datetime
+
+
+@dataclass(frozen=True)
+class PreparedCustomerTurnStream:
+    started: StartedCustomerTurn
+    client_message_id: UUID
+    question: str
+    grounded_evidence: PreparedGroundedEvidence | None
+    replay_result: CustomerTurnResponse | None = None
+
+
+@dataclass(frozen=True)
+class CustomerStreamStarted:
+    conversation_id: UUID
+    turn_id: UUID
+    client_message_id: UUID
+
+
+@dataclass(frozen=True)
+class CustomerStreamDelta:
+    text: str
+
+
+@dataclass(frozen=True)
+class CustomerStreamComplete:
+    result: CustomerTurnResponse
+
+
+@dataclass(frozen=True)
+class CustomerStreamError:
+    code: Literal["stream_failed"] = "stream_failed"
+    message: str = "I couldn't complete that response right now."
+
+
+type CustomerTurnStreamEvent = (
+    CustomerStreamStarted | CustomerStreamDelta | CustomerStreamComplete | CustomerStreamError
+)

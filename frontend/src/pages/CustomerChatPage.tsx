@@ -8,7 +8,7 @@ import {
   getCustomerConversation,
   requestCustomerHumanSupport,
   setCustomerMessageFeedback,
-  submitCustomerTurn,
+  streamCustomerTurn,
   type CitationLocator,
   type CustomerCitation,
   type CustomerMessage,
@@ -155,6 +155,7 @@ export function CustomerChatPage() {
     publicId ? 'loading' : 'unavailable',
   )
   const [sending, setSending] = useState(false)
+  const [streamingText, setStreamingText] = useState<string | null>(null)
   const [failedOutbound, setFailedOutbound] = useState<OutboundMessage | null>(null)
   const [conversationStatus, setConversationStatus] = useState<ConversationStatus>('open')
   const [humanRequestedAt, setHumanRequestedAt] = useState<string | null>(null)
@@ -227,27 +228,60 @@ export function CustomerChatPage() {
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView?.({ behavior: 'smooth', block: 'nearest' })
-  }, [messages, sending])
+  }, [messages, sending, streamingText])
 
   async function submitOutbound(outbound: OutboundMessage, isRetry: boolean): Promise<void> {
-    if (!publicId || !session || sendingRef.current || conversationStatus !== 'open') return
+    if (!publicId || !session || sendingRef.current || requestingHumanRef.current || conversationStatus !== 'open') return
     if (!isRetry) {
       setMessages((current) => [...current, localCustomerMessage(outbound)])
       setFailedOutbound(null)
     }
     sendingRef.current = true
     setSending(true)
+    setStreamingText(null)
 
     try {
       let activeSession = session
-      let result: CustomerTurnResult
-      try {
-        result = await submitCustomerTurn(
-          activeSession.conversationId,
-          activeSession.sessionToken,
+      const streamWithSession = async (
+        selectedSession: StoredCustomerChatSession,
+      ): Promise<CustomerTurnResult> => {
+        let streamStarted = false
+        return streamCustomerTurn(
+          selectedSession.conversationId,
+          selectedSession.sessionToken,
           outbound.clientMessageId,
           outbound.message,
+          {
+            onStarted: (event) => {
+              if (
+                event.conversation_id !== selectedSession.conversationId ||
+                event.client_message_id !== outbound.clientMessageId
+              ) {
+                throw new CustomerChatApiError('unavailable')
+              }
+              streamStarted = true
+              setStreamingText('')
+            },
+            onDelta: (text) => {
+              if (!streamStarted) throw new CustomerChatApiError('unavailable')
+              setStreamingText((current) => `${current ?? ''}${text}`)
+            },
+            onComplete: (result) => {
+              if (
+                result.conversation_id !== selectedSession.conversationId ||
+                result.client_message_id !== outbound.clientMessageId
+              ) {
+                throw new CustomerChatApiError('unavailable')
+              }
+              setStreamingText(null)
+              setMessages((current) => [...current, assistantMessage(result)])
+              setFailedOutbound(null)
+            },
+          },
         )
+      }
+      try {
+        await streamWithSession(activeSession)
       } catch (caught) {
         if (!(caught instanceof CustomerChatApiError) || caught.kind !== 'invalid-session') {
           throw caught
@@ -259,22 +293,10 @@ export function CustomerChatPage() {
         setMessages([localCustomerMessage(outbound)])
         setConversationStatus('open')
         setHumanRequestedAt(null)
-        result = await submitCustomerTurn(
-          activeSession.conversationId,
-          activeSession.sessionToken,
-          outbound.clientMessageId,
-          outbound.message,
-        )
+        await streamWithSession(activeSession)
       }
-      if (
-        result.conversation_id !== activeSession.conversationId ||
-        result.client_message_id !== outbound.clientMessageId
-      ) {
-        throw new CustomerChatApiError('unavailable')
-      }
-      setMessages((current) => [...current, assistantMessage(result)])
-      setFailedOutbound(null)
     } catch {
+      setStreamingText(null)
       setFailedOutbound(outbound)
     } finally {
       sendingRef.current = false
@@ -326,7 +348,7 @@ export function CustomerChatPage() {
   }
 
   async function handleHumanRequest(): Promise<void> {
-    if (!session || requestingHumanRef.current || conversationStatus !== 'open') return
+    if (!session || sendingRef.current || requestingHumanRef.current || conversationStatus !== 'open') return
     requestingHumanRef.current = true
     setRequestingHuman(true)
     setActionError(null)
@@ -375,7 +397,8 @@ export function CustomerChatPage() {
     conversationStatus === 'open' &&
     normalizedDraft.length > 0 &&
     normalizedDraft.length <= CUSTOMER_MESSAGE_LIMIT &&
-    !sending
+    !sending &&
+    !requestingHuman
 
   return (
     <main className="min-h-screen bg-[radial-gradient(circle_at_top,#cffafe_0,#f8fafc_42%,#e2e8f0_100%)] px-3 py-3 text-slate-900 sm:px-6 sm:py-7">
@@ -405,7 +428,7 @@ export function CustomerChatPage() {
             <p className="mr-auto font-medium">Request human support and pause AI messaging?</p>
             <button
               className="rounded-lg px-3 py-2 font-bold text-slate-600"
-              disabled={requestingHuman}
+              disabled={sending || requestingHuman}
               onClick={() => setConfirmingHuman(false)}
               type="button"
             >
@@ -413,7 +436,7 @@ export function CustomerChatPage() {
             </button>
             <button
               className="rounded-lg bg-cyan-700 px-3 py-2 font-bold text-white disabled:opacity-60"
-              disabled={requestingHuman}
+              disabled={sending || requestingHuman}
               onClick={() => void handleHumanRequest()}
               type="button"
             >
@@ -447,7 +470,7 @@ export function CustomerChatPage() {
             <div className="space-y-4">
               {messages.map((message) => (
                 <MessageBubble
-                  canRequestHuman={conversationStatus === 'open'}
+                  canRequestHuman={conversationStatus === 'open' && !sending && !requestingHuman}
                   feedbackSubmitting={feedbackSubmittingId === message.id}
                   key={message.id}
                   message={message}
@@ -459,9 +482,15 @@ export function CustomerChatPage() {
           )}
 
           {sending && (
-            <div aria-live="polite" className="mt-4 mr-auto w-fit rounded-3xl rounded-bl-lg border border-slate-200 bg-white px-5 py-4 text-sm text-slate-500 shadow-sm">
-              Finding a grounded answer…
-            </div>
+            <article
+              aria-busy="true"
+              aria-label="Assistant response in progress"
+              className="mt-4 mr-auto max-w-[88%] whitespace-pre-wrap break-words rounded-3xl rounded-bl-lg border border-slate-200 bg-white px-5 py-4 text-slate-800 shadow-sm sm:max-w-[78%]"
+            >
+              <p className="leading-7 text-slate-500">
+                {streamingText ? streamingText : 'Finding a grounded answer…'}
+              </p>
+            </article>
           )}
           {failedOutbound && !sending && (
             <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950" role="alert">
@@ -482,7 +511,7 @@ export function CustomerChatPage() {
           <div className="flex items-end gap-3 rounded-2xl border border-slate-300 bg-slate-50 p-2 focus-within:border-cyan-500 focus-within:ring-4 focus-within:ring-cyan-100">
             <textarea
               className="max-h-36 min-h-12 min-w-0 flex-1 resize-none bg-transparent px-3 py-2.5 leading-6 text-slate-900 outline-none placeholder:text-slate-400 disabled:opacity-60"
-              disabled={sending || conversationStatus !== 'open'}
+              disabled={sending || requestingHuman || conversationStatus !== 'open'}
               id="customer-message"
               maxLength={CUSTOMER_MESSAGE_LIMIT}
               onChange={(event) => setDraft(event.target.value)}

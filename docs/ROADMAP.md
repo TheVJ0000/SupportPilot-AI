@@ -81,9 +81,9 @@ The local machine still has neither Docker nor the Supabase CLI, so the pgTAP da
 
 **Objective:** Deliver a polished hosted support-chat experience built on the RAG engine.
 
-**Status:** Phase 5A and the focused Phase 5B.1–5B.3 increments are complete in application code and automated tests. The public `/chat/:publicId` experience now includes persisted session/history restoration, non-streaming idempotent turns, trusted citations, bounded follow-up interpretation, changeable assistant-message feedback, and confirmed human handoff. A human request records `human_requested` and pauses new AI turns; it does not connect or notify a person. Phase 6 will add bounded triage and escalation automation.
+**Status:** Complete in application code and automated unit/component tests. Phase 5A and Phase 5B.1–5B.3 provide anonymous persistence, history restoration, idempotent retries, trusted citations, bounded follow-up interpretation, feedback, and confirmed human-request state. Phase 5B.4 adds real `google-genai` structured-output streaming through the generation-provider abstraction and the hosted UI; it does not use fake typing animation.
 
-Phase 5 is not complete. True answer streaming remains the final major deferred requirement. Hosted Supabase/Gemini end-to-end verification is still environment-dependent.
+The server validates the streamed decision and complete request-local evidence-ID list before releasing answer deltas, performs mandatory final structured validation, reconstructs citations only from trusted retrieval metadata, and atomically persists only the completed answer. Partial text is memory/browser-only and is removed after interruption or error. Deterministic insufficient-evidence responses remain server controlled, and completed retries emit only the persisted completion without calling Gemini again. No database migration was required. Live Gemini streaming, hosted Supabase verification, Playwright end-to-end coverage, and broader security/load testing remain Phase 9 work. A human request pauses AI turns but does not connect or notify a person; Phase 6 will add bounded triage and escalation automation.
 
 **Completion criteria:**
 

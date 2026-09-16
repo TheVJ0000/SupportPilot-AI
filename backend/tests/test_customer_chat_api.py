@@ -1,3 +1,4 @@
+import json
 from datetime import UTC, datetime
 from uuid import UUID
 
@@ -6,7 +7,12 @@ from httpx import ASGITransport, AsyncClient
 
 from app.ai.embeddings.factory import get_embedding_provider
 from app.ai.generation.factory import get_generation_provider
-from app.ai.generation.models import GroundedGenerationDecision
+from app.ai.generation.models import (
+    GenerationAnswerDelta,
+    GenerationDecisionEvent,
+    GenerationStreamComplete,
+    GroundedGenerationDecision,
+)
 from app.chat.errors import CustomerChatGatewayError
 from app.chat.gateway import get_customer_chat_gateway
 from app.chat.models import (
@@ -58,6 +64,7 @@ class ApiGenerationProvider:
 
     def __init__(self) -> None:
         self.calls = 0
+        self.stream_calls = 0
 
     async def generate_grounded_answer(self, question, evidence):
         self.calls += 1
@@ -68,6 +75,20 @@ class ApiGenerationProvider:
             answer="Use the reset link.",
             evidence_ids=["E1"],
         )
+
+    async def stream_grounded_answer(self, question, evidence):
+        self.stream_calls += 1
+        assert question == "How do I reset my password?"
+        assert [item.evidence_id for item in evidence] == ["E1"]
+        result = GroundedGenerationDecision(
+            decision="answerable",
+            evidence_ids=["E1"],
+            answer="Use the reset link.",
+        )
+        yield GenerationDecisionEvent(decision="answerable", evidence_ids=["E1"])
+        yield GenerationAnswerDelta(text="Use the ")
+        yield GenerationAnswerDelta(text="reset link.")
+        yield GenerationStreamComplete(result=result)
 
 
 class ApiRetrievalGateway:
@@ -547,3 +568,182 @@ async def test_human_requested_conversation_restores_state_and_blocks_later_turn
     assert turn.status_code == 409
     assert embedding.calls == 0
     assert generation.calls == 0
+
+
+def parse_sse(response_text: str) -> list[tuple[str, dict]]:
+    events = []
+    for frame in response_text.strip().split("\n\n"):
+        lines = frame.splitlines()
+        assert len(lines) == 2
+        assert lines[0].startswith("event: ")
+        assert lines[1].startswith("data: ")
+        events.append((lines[0][7:], json.loads(lines[1][6:])))
+    return events
+
+
+@pytest.mark.anyio
+async def test_stream_endpoint_requires_session_and_uses_safe_sse_order() -> None:
+    gateway = ApiCustomerChatGateway(with_evidence=True)
+    embedding, generation = configure_dependencies(gateway)
+    path = f"/api/chat/conversations/{CONVERSATION_ID}/turns/stream"
+    payload = {
+        "client_message_id": str(CLIENT_MESSAGE_ID),
+        "message": "How do I reset my password?",
+    }
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        missing = await client.post(path, json=payload)
+        response = await client.post(
+            path,
+            headers={"X-SupportPilot-Session": CUSTOMER_TOKEN},
+            json=payload,
+        )
+
+    assert missing.status_code == 401
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/event-stream")
+    assert response.headers["cache-control"] == "no-cache, no-store"
+    assert response.headers["x-accel-buffering"] == "no"
+    events = parse_sse(response.text)
+    assert [name for name, _data in events] == ["started", "delta", "delta", "complete"]
+    assert "".join(data["text"] for name, data in events if name == "delta") == (
+        "Use the reset link."
+    )
+    complete = events[-1][1]
+    assert complete["message_id"] == str(ASSISTANT_MESSAGE_ID)
+    assert complete["citations"][0]["source_id"] == str(SOURCE_ID)
+    assert embedding.calls == 1
+    assert generation.stream_calls == 1
+    for forbidden in (CUSTOMER_TOKEN, TOKEN_HASH, "workspace_id", "embedding", "similarity"):
+        assert forbidden not in response.text
+
+
+@pytest.mark.anyio
+async def test_stream_no_evidence_skips_generation_and_completes_without_deltas() -> None:
+    gateway = ApiCustomerChatGateway(with_evidence=False)
+    _embedding, generation = configure_dependencies(gateway)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post(
+            f"/api/chat/conversations/{CONVERSATION_ID}/turns/stream",
+            headers={"X-SupportPilot-Session": CUSTOMER_TOKEN},
+            json={
+                "client_message_id": str(CLIENT_MESSAGE_ID),
+                "message": "How do I reset my password?",
+            },
+        )
+
+    events = parse_sse(response.text)
+    assert [name for name, _data in events] == ["started", "complete"]
+    assert events[-1][1]["status"] == "insufficient_evidence"
+    assert events[-1][1]["citations"] == []
+    assert generation.stream_calls == 0
+
+
+@pytest.mark.anyio
+async def test_stream_completed_replay_emits_only_persisted_complete() -> None:
+    class ReplayGateway(ApiCustomerChatGateway):
+        async def begin_turn(self, conversation_id, token_hash, client_message_id, message):
+            return StartedCustomerTurn(
+                turn_id=TURN_ID,
+                workspace_id=WORKSPACE_ID,
+                conversation_id=CONVERSATION_ID,
+                turn_status="completed",
+                is_replay=True,
+            )
+
+    gateway = ReplayGateway()
+    gateway.completed = PersistedCustomerTurn(
+        turn_id=TURN_ID,
+        conversation_id=CONVERSATION_ID,
+        message_id=ASSISTANT_MESSAGE_ID,
+        client_message_id=CLIENT_MESSAGE_ID,
+        answer_status="answered",
+        answer="Persisted replay.",
+        citations=[],
+    )
+    embedding, generation = configure_dependencies(gateway)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post(
+            f"/api/chat/conversations/{CONVERSATION_ID}/turns/stream",
+            headers={"X-SupportPilot-Session": CUSTOMER_TOKEN},
+            json={
+                "client_message_id": str(CLIENT_MESSAGE_ID),
+                "message": "How do I reset my password?",
+            },
+        )
+
+    events = parse_sse(response.text)
+    assert [name for name, _data in events] == ["complete"]
+    assert events[0][1]["is_replay"] is True
+    assert embedding.calls == 0
+    assert generation.stream_calls == 0
+
+
+@pytest.mark.anyio
+async def test_processing_duplicate_fails_before_sse_and_does_not_regenerate() -> None:
+    class ProcessingGateway(ApiCustomerChatGateway):
+        async def begin_turn(self, conversation_id, token_hash, client_message_id, message):
+            return StartedCustomerTurn(
+                turn_id=TURN_ID,
+                workspace_id=WORKSPACE_ID,
+                conversation_id=CONVERSATION_ID,
+                turn_status="processing",
+                is_replay=True,
+            )
+
+    gateway = ProcessingGateway()
+    embedding, generation = configure_dependencies(gateway)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post(
+            f"/api/chat/conversations/{CONVERSATION_ID}/turns/stream",
+            headers={"X-SupportPilot-Session": CUSTOMER_TOKEN},
+            json={
+                "client_message_id": str(CLIENT_MESSAGE_ID),
+                "message": "How do I reset my password?",
+            },
+        )
+
+    assert response.status_code == 409
+    assert "text/event-stream" not in response.headers.get("content-type", "")
+    assert embedding.calls == 0
+    assert generation.stream_calls == 0
+
+
+@pytest.mark.anyio
+async def test_stream_failure_is_sanitized_and_never_emits_complete() -> None:
+    class FailingGateway(ApiCustomerChatGateway):
+        def __init__(self):
+            super().__init__()
+            self.failures = []
+
+        async def fail_turn(self, *args):
+            self.failures.append(args)
+
+    class InvalidGeneration(ApiGenerationProvider):
+        async def stream_grounded_answer(self, question, evidence):
+            yield GenerationDecisionEvent(decision="answerable", evidence_ids=["E9"])
+            yield GenerationAnswerDelta(text="private provider detail")
+
+    gateway = FailingGateway()
+    embedding = ApiEmbeddingProvider()
+    generation = InvalidGeneration()
+    app.dependency_overrides[get_customer_chat_gateway] = lambda: gateway
+    app.dependency_overrides[get_embedding_provider] = lambda: embedding
+    app.dependency_overrides[get_generation_provider] = lambda: generation
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post(
+            f"/api/chat/conversations/{CONVERSATION_ID}/turns/stream",
+            headers={"X-SupportPilot-Session": CUSTOMER_TOKEN},
+            json={
+                "client_message_id": str(CLIENT_MESSAGE_ID),
+                "message": "How do I reset my password?",
+            },
+        )
+
+    events = parse_sse(response.text)
+    assert [name for name, _data in events] == ["started", "error"]
+    assert events[-1][1] == {
+        "code": "stream_failed",
+        "message": "I couldn't complete that response right now.",
+    }
+    assert "private" not in response.text
+    assert gateway.failures == [(TURN_ID, TOKEN_HASH, "generation_failed")]

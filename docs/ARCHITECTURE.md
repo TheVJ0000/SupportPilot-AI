@@ -148,8 +148,11 @@ flowchart LR
     TURN --> CONTEXT[Bounded recent persisted context plus current question]
     CONTEXT --> EMBED[One query embedding]
     EMBED --> RET[Session-scoped knowledge retrieval]
-    RET --> RAG[Existing grounded RAG engine]
-    RAG --> SAVE[Atomic answer and citation snapshot]
+    RET --> PREFIX[Structured Gemini stream: decision then evidence IDs]
+    PREFIX --> VALIDATE[Validate request-local evidence IDs]
+    VALIDATE --> DELTA[Stream decoded grounded answer text]
+    DELTA --> FINAL[Final structured validation]
+    FINAL --> SAVE[Atomic answer and trusted citation snapshot]
     SAVE --> HISTORY[Conversation history API]
     SAVE --> FEEDBACK[Customer rating persisted on assistant message]
     HISTORY --> HANDOFF[Confirmed human request]
@@ -173,7 +176,13 @@ Phase 5B.2 loads authoritative history only after a new or failed-retry turn beg
 
 Phase 5B.3 adds one workspace-scoped feedback row per assistant message. Anonymous customers can insert or change only `positive`/`negative` feedback through a session-validated server-only RPC; workspace members receive read-only RLS access for the later admin dashboard. A separate idempotent RPC locks an open conversation, verifies the opaque session and enabled chat, records `human_requested_at`, and transitions it to `human_requested`. Existing history, citations, and feedback remain intact, while the existing turn-start guard blocks new AI turns.
 
-The hosted UI renders all customer, assistant, and citation text as plain text. Citation locations support PDF pages, DOCX blocks, text/Markdown lines, and FAQs without inventing source URLs. It restores feedback and handoff state from the backend, uses inline confirmation before handoff, and disables the composer afterward without claiming that a person is connected or notified. Phase 6 will add triage/escalation automation. Phase 5 remains non-streaming; true answer streaming is still deferred.
+Phase 5B.4 adds genuine provider streaming through the existing `google-genai` Generate Content API and provider abstraction; it does not animate a completed answer character by character and does not introduce another AI SDK. The strict schema is ordered `decision`, `evidence_ids`, then `answer`, allowing the server to fully parse and validate the decision and request-local labels before exposing any decoded answer text. The incremental parser handles arbitrary chunk boundaries and JSON escapes without regex-based extraction. It accumulates the complete JSON for mandatory final Pydantic validation, confirms the final decision, canonical evidence IDs, and answer exactly match the streamed values, then reconstructs citations only from the retrieved metadata.
+
+The streaming customer endpoint is `POST /api/chat/conversations/{conversation_id}/turns/stream` with the existing `X-SupportPilot-Session` credential and request body. Its minimal SSE contract is `started`, zero or more `delta` events, then one authoritative `complete`, or a safe `error` after headers. Retrieval and turn preparation occur before the response starts. A completed idempotent replay emits only its persisted `complete` result and makes no embedding, retrieval, or Gemini call; a processing duplicate fails before SSE; a failed turn can retry with the same client message ID without duplicating the customer message.
+
+Partial assistant text exists only in process memory and one provisional browser message. It is never stored as events, chunks, or partial messages. On cancellation, malformed output, an unknown evidence label, excess answer length, or another stream failure, the turn is marked failed where possible, no assistant message is committed, and the browser removes the provisional response while retaining the original customer message and retry ID. No provider or database details are sent. If retrieval has no matches, Gemini is skipped; if Gemini chooses insufficient evidence, its answer text is not exposed and the deterministic server-owned message is atomically persisted. Citations and feedback controls appear only after completion.
+
+The hosted UI renders all customer, assistant, and citation text as plain text. Citation locations support PDF pages, DOCX blocks, text/Markdown lines, and FAQs without inventing source URLs. It restores feedback and handoff state from the backend, uses inline confirmation before handoff, and disables the composer and human-request actions while a turn streams. After confirmed handoff it blocks new AI turns without claiming that a person is connected or notified. Phase 5 is complete in application code and automated unit/component tests. Live Gemini streaming, hosted Supabase verification, Playwright end-to-end coverage, and broader security/load validation remain Phase 9 work; Phase 6 will add bounded triage/escalation automation.
 
 ### Question-answering principles
 
@@ -237,4 +246,4 @@ Generation and embeddings should be called through application interfaces rather
 
 ## Database scope
 
-Phase 3C completes ingestion with explicit lifecycle metadata, replaceable embeddings, 768-dimensional pgvector storage, and one cosine HNSW index. Phase 4 adds authenticated workspace-scoped semantic retrieval, evidence-sufficiency decisions, grounded structured generation, and server-validated citations. Phase 5A adds `workspace_chat_configs`, `customer_sessions`, `conversations`, `conversation_turns`, `messages`, and `message_citations` plus narrowly granted customer-chat RPCs. Feedback, escalations, and analytics remain deferred.
+Phase 3C completes ingestion with explicit lifecycle metadata, replaceable embeddings, 768-dimensional pgvector storage, and one cosine HNSW index. Phase 4 adds authenticated workspace-scoped semantic retrieval, evidence-sufficiency decisions, grounded structured generation, and server-validated citations. Phase 5A adds `workspace_chat_configs`, `customer_sessions`, `conversations`, `conversation_turns`, `messages`, and `message_citations` plus narrowly granted customer-chat RPCs; Phase 5B.3 adds message feedback. Streaming remains transport-only and adds no database table or migration. Escalations and analytics remain deferred.

@@ -4,8 +4,10 @@ import {
   CustomerChatApiError,
   createCustomerSession,
   getCustomerConversation,
+  parseCustomerTurnEventStream,
   requestCustomerHumanSupport,
   setCustomerMessageFeedback,
+  streamCustomerTurn,
   submitCustomerTurn,
 } from './customerChatApi'
 
@@ -18,6 +20,39 @@ const SESSION_TOKEN = 'A'.repeat(43)
 
 function response(json: unknown, status = 200): Response {
   return { ok: status >= 200 && status < 300, status, json: async () => json } as Response
+}
+
+const encoder = new TextEncoder()
+
+function readable(chunks: Uint8Array[]): ReadableStream<Uint8Array> {
+  return new ReadableStream({
+    start(controller) {
+      for (const chunk of chunks) controller.enqueue(chunk)
+      controller.close()
+    },
+  })
+}
+
+function streamResponse(chunks: Uint8Array[], status = 200): Response {
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    body: readable(chunks),
+    headers: new Headers({ 'Content-Type': 'text/event-stream; charset=utf-8' }),
+  } as Response
+}
+
+function completeFrame(answer = 'Done 😀'): string {
+  return `event: complete\ndata: ${JSON.stringify({
+    conversation_id: CONVERSATION_ID,
+    turn_id: TURN_ID,
+    message_id: MESSAGE_ID,
+    client_message_id: CLIENT_MESSAGE_ID,
+    status: 'answered',
+    answer,
+    citations: [],
+    is_replay: false,
+  })}\n\n`
 }
 
 describe('customer chat API client', () => {
@@ -119,5 +154,109 @@ describe('customer chat API client', () => {
     await expect(getCustomerConversation(CONVERSATION_ID, SESSION_TOKEN)).rejects.toEqual(
       new CustomerChatApiError('invalid-session'),
     )
+  })
+
+  it('parses one or many SSE frames across arbitrary chunks and split UTF-8', async () => {
+    const source =
+      `event: started\ndata: ${JSON.stringify({
+        conversation_id: CONVERSATION_ID,
+        turn_id: TURN_ID,
+        client_message_id: CLIENT_MESSAGE_ID,
+      })}\n\n` +
+      `event: delta\ndata: ${JSON.stringify({ text: 'Hello 😀' })}\n\n` +
+      completeFrame('Hello 😀')
+    const bytes = encoder.encode(source)
+    const emojiStart = source.indexOf('😀')
+    const byteSplit = encoder.encode(source.slice(0, emojiStart)).length + 2
+    const chunks = [bytes.slice(0, 1), bytes.slice(1, byteSplit), bytes.slice(byteSplit)]
+
+    const events = []
+    for await (const event of parseCustomerTurnEventStream(readable(chunks))) events.push(event)
+
+    expect(events.map((event) => event.type)).toEqual(['started', 'delta', 'complete'])
+    expect(events[1]).toEqual({ type: 'delta', data: { text: 'Hello 😀' } })
+  })
+
+  it('streams using fetch, invokes deltas before completion, and sends no bearer token', async () => {
+    const source =
+      `event: started\ndata: ${JSON.stringify({
+        conversation_id: CONVERSATION_ID,
+        turn_id: TURN_ID,
+        client_message_id: CLIENT_MESSAGE_ID,
+      })}\n\n` +
+      `event: delta\ndata: ${JSON.stringify({ text: 'First ' })}\n\n` +
+      `event: delta\ndata: ${JSON.stringify({ text: 'second' })}\n\n` +
+      completeFrame('First second')
+    const fetchMock = vi.fn().mockResolvedValue(streamResponse([encoder.encode(source)]))
+    vi.stubGlobal('fetch', fetchMock)
+    const observed: string[] = []
+
+    const result = await streamCustomerTurn(
+      CONVERSATION_ID,
+      SESSION_TOKEN,
+      CLIENT_MESSAGE_ID,
+      'Question?',
+      {
+        onStarted: () => observed.push('started'),
+        onDelta: (text) => observed.push(text),
+        onComplete: () => observed.push('complete'),
+      },
+    )
+
+    expect(observed).toEqual(['started', 'First ', 'second', 'complete'])
+    expect(result.answer).toBe('First second')
+    expect(fetchMock.mock.calls[0][0]).toContain('/turns/stream')
+    expect(fetchMock.mock.calls[0][1].headers[CUSTOMER_SESSION_HEADER]).toBe(SESSION_TOKEN)
+    expect(fetchMock.mock.calls[0][1].headers).not.toHaveProperty('Authorization')
+  })
+
+  it('accepts a final frame without a trailing boundary and rejects unknown events', async () => {
+    const finalFrame = completeFrame('Persisted replay').trimEnd()
+    const events = []
+    for await (const event of parseCustomerTurnEventStream(
+      readable([encoder.encode(finalFrame)]),
+    )) {
+      events.push(event)
+    }
+    expect(events).toHaveLength(1)
+    expect(events[0].type).toBe('complete')
+
+    const unknown = readable([encoder.encode('event: unsafe\ndata: {"text":"x"}\n\n')])
+    await expect(async () => {
+      for await (const event of parseCustomerTurnEventStream(unknown)) {
+        // Consume the parser to surface validation failures.
+        void event
+      }
+    }).rejects.toEqual(new CustomerChatApiError('unavailable'))
+  })
+
+  it('detects an incomplete stream and classifies pre-stream 401 once', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockResolvedValueOnce(streamResponse([encoder.encode('event: delta\ndata: {"text":"x"}\n\n')]))
+        .mockResolvedValueOnce(streamResponse([], 401)),
+    )
+    const handlers = { onStarted: vi.fn(), onDelta: vi.fn(), onComplete: vi.fn() }
+
+    await expect(
+      streamCustomerTurn(
+        CONVERSATION_ID,
+        SESSION_TOKEN,
+        CLIENT_MESSAGE_ID,
+        'Question?',
+        handlers,
+      ),
+    ).rejects.toEqual(new CustomerChatApiError('unavailable'))
+    await expect(
+      streamCustomerTurn(
+        CONVERSATION_ID,
+        SESSION_TOKEN,
+        CLIENT_MESSAGE_ID,
+        'Question?',
+        handlers,
+      ),
+    ).rejects.toEqual(new CustomerChatApiError('invalid-session'))
   })
 })

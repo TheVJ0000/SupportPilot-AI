@@ -1,6 +1,11 @@
+from collections.abc import AsyncIterator
 from typing import Protocol
 
-from app.ai.generation.models import GenerationEvidence, GroundedGenerationDecision
+from app.ai.generation.models import (
+    GenerationEvidence,
+    GenerationStreamEvent,
+    GroundedGenerationDecision,
+)
 
 
 class GenerationProvider(Protocol):
@@ -15,3 +20,9 @@ class GenerationProvider(Protocol):
         question: str,
         evidence: list[GenerationEvidence],
     ) -> GroundedGenerationDecision: ...
+
+    def stream_grounded_answer(
+        self,
+        question: str,
+        evidence: list[GenerationEvidence],
+    ) -> AsyncIterator[GenerationStreamEvent]: ...
