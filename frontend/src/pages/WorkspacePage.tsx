@@ -105,7 +105,7 @@ export function WorkspacePage() {
 
       <div className="mt-8 rounded-3xl border border-white/10 bg-white/[0.045] p-6 sm:p-8">
         <h2 className="text-lg font-semibold">Workspace ready</h2>
-        <p className="mt-2 max-w-2xl leading-7 text-slate-400">Authentication and tenant selection are connected. Knowledge ingestion and support features will arrive in later phases.</p>
+        <p className="mt-2 max-w-2xl leading-7 text-slate-400">Authentication and tenant selection are connected. Manage business knowledge from Knowledge Base. Workspace owners and admins can inspect support activity in the read-only operations dashboard.</p>
       </div>
     </section>
   )

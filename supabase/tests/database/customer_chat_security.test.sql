@@ -488,7 +488,7 @@ select is(
         select value from customer_chat_test_context where key = 'primary_conversation'
     )),
     2,
-    'A workspace member can read their persisted conversation messages'
+    'A workspace owner can read their persisted conversation messages'
 );
 reset role;
 

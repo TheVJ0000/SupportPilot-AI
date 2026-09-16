@@ -10,6 +10,12 @@ import { LoginPage } from './pages/LoginPage'
 import { RegisterPage } from './pages/RegisterPage'
 import { WorkspacePage } from './pages/WorkspacePage'
 import { WorkspaceProvider } from './workspace/WorkspaceProvider'
+import { AppLanding, OperationsGuard } from './admin/OperationsGuard'
+import { DashboardPage } from './admin/DashboardPage'
+import { ConversationsPage } from './admin/ConversationsPage'
+import { ConversationDetailPage } from './admin/ConversationDetailPage'
+import { EscalationsPage } from './admin/EscalationsPage'
+import { EscalationDetailPage } from './admin/EscalationDetailPage'
 
 function AuthenticatedApplication() {
   return (
@@ -39,9 +45,16 @@ export function AppRoutes() {
         </Route>
         <Route element={<ProtectedRoute />}>
           <Route path="/app" element={<AuthenticatedApplication />}>
-            <Route index element={<Navigate to="workspaces" replace />} />
+            <Route index element={<AppLanding />} />
             <Route path="workspaces" element={<WorkspacePage />} />
             <Route path="knowledge" element={<KnowledgePage />} />
+            <Route element={<OperationsGuard />}>
+              <Route path="dashboard" element={<DashboardPage />} />
+              <Route path="conversations" element={<ConversationsPage />} />
+              <Route path="conversations/:conversationId" element={<ConversationDetailPage />} />
+              <Route path="escalations" element={<EscalationsPage />} />
+              <Route path="escalations/:escalationId" element={<EscalationDetailPage />} />
+            </Route>
           </Route>
         </Route>
       </Route>

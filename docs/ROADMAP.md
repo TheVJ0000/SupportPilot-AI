@@ -103,7 +103,7 @@ The server validates the streamed decision and complete request-local evidence-I
 
 Completed triage atomically creates a durable pending notification. Optional deterministic Resend HTTPS delivery uses only minimal workspace/category/priority information and verified workspace owner/admin recipients derived at send time. Sent state, attempt fencing and deterministic provider keys prevent safe replays; ambiguous/expired-key delivery requires later review, not endless retry. Resend Free pricing/restrictions were checked; billing, pay-as-you-go and domain purchases were not enabled. SupportPilot runs without email credentials. This in-process worker is best effort, not an external durable queue; database state supplies recovery. No LangGraph/new model tools, Redis/Celery/paid queue, Slack/CRM, dashboard, widget or deployment was added.
 
-Apply migrations 009/010 and run the pgTAP suite on a disposable Supabase environment before relying on database behavior. Supabase CLI/Docker remain unavailable, so pgTAP was not executed. A limited native PostgreSQL fixture smoke verified migration 010 lifecycle/recipient/grant behavior, not full Supabase RLS or pgTAP. Live Gemini triage, live Resend delivery, hosted Supabase and Playwright checks remain unverified. Phase 7 is not started. Runtime validation/configuration and exhausted/ambiguous record review remain operational follow-ups, not claims of production readiness.
+Apply migrations 009/010 and run the pgTAP suite on a disposable Supabase environment before relying on database behavior. Supabase CLI/Docker remain unavailable, so pgTAP was not executed. A limited native PostgreSQL fixture smoke verified migration 010 lifecycle/recipient/grant behavior, not full Supabase RLS or pgTAP. Live Gemini triage, live Resend delivery, hosted Supabase and Playwright checks remain unverified. Runtime validation/configuration and exhausted/ambiguous record review remain operational follow-ups, not claims of production readiness.
 
 **Completion criteria:**
 
@@ -115,6 +115,14 @@ Apply migrations 009/010 and run the pgTAP suite on a disposable Supabase enviro
 - Agent actions are testable and auditable.
 
 ## Phase 7 — Admin dashboard
+
+**Status: Phase 7A implemented; Phase 7 NOT complete.** The read-only operations dashboard includes workspace metrics, recent conversations/escalations, enum-filtered keyset lists, transcripts with citations/feedback, escalation classification/AI summary, bounded newest-first audit attempts, notification status, and knowledge lifecycle counts. Owner/admin-only navigation and route guards complement authenticated FastAPI and explicitly authorized JWT-scoped RPCs. Migration 011 replaces broad member SELECT policies on eight sensitive tables; Knowledge Base member reads and narrow server automation/chat RPCs remain intact.
+
+AI answered ≠ AI resolved: distinct conversations with an assistant `answered` message are divided by total conversations for answer coverage (empty = 0%), never a resolution rate. Open means `status = open` only; high/urgent requires completed triage. Lists are bounded (default 25/max 50), with fixed server-side enums, stable timestamp/UUID ordering and defined null-activity handling. Workspace/identity switching discards prior operational data and fences stale responses. Messages/titles/AI summaries are plain text; transcripts and summaries are not stored in browser storage.
+
+Validation: 360 backend tests and 111 frontend tests pass, with Ruff, frontend lint/build and whitespace checks. Limited native PostgreSQL fixtures smoke-tested migration 011 metrics/pagination/authorization/RLS/record shapes, not full Supabase or pgTAP. **pgTAP and hosted Supabase were not run**; CLI/Docker are unavailable. Run all migrations and database security regressions in disposable Supabase before Phase 7B. No live AI/email calls, chart dependency, external service, widget or deployment was introduced.
+
+**Phase 7B remaining:** explicit management/lifecycle mutations, management authorization/testing, final analytics polish, and any resolution semantics required before a genuine resolution rate. No resolve/close/priority/category/delete/reply/contact/notification-retry controls exist in 7A. Do not infer authorization for those actions from read-only access.
 
 **Objective:** Give business/admin users a useful operational view of their support system.
 

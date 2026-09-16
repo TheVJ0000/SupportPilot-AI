@@ -315,7 +315,7 @@ set local request.jwt.claim.sub = '81000000-0000-0000-0000-000000000001';
 select is(
     (select count(*)::integer from public.message_feedback),
     1,
-    'A workspace member can read feedback for their conversation'
+    'A workspace owner can read feedback for their conversation'
 );
 set local request.jwt.claim.sub = '82000000-0000-0000-0000-000000000002';
 select is(

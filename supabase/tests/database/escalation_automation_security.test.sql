@@ -98,7 +98,7 @@ select ok(bool_and(has_function_privilege('service_role',signature,'EXECUTE')
     'public.complete_escalation_notification(uuid,integer,text,text)','public.fail_escalation_notification(uuid,integer,text)']) as signatures(signature);
 set local role authenticated;
 set local request.jwt.claim.sub='a1000000-0000-4000-8000-000000000003';
-select is((select count(*)::integer from public.escalation_notifications),1,'Workspace members may read delivery state');
+select is((select count(*)::integer from public.escalation_notifications),0,'Ordinary members cannot read support delivery state');
 set local request.jwt.claim.sub='a1000000-0000-4000-8000-000000000004';
 select is((select count(*)::integer from public.escalation_notifications),0,'Nonmembers cannot read another workspace outbox');
 reset role;
