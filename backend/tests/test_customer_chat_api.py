@@ -20,12 +20,14 @@ from app.chat.models import (
     CustomerConversationResponse,
     CustomerFeedbackResponse,
     CustomerHistoryMessage,
-    CustomerHumanRequestResponse,
+    CustomerHumanRequestResult,
     PersistedCustomerTurn,
     StartedCustomerTurn,
 )
 from app.chat.security import hash_customer_session_token
 from app.core.config import Settings, get_settings
+from app.escalations.background import get_background_triage_runner
+from app.escalations.service import EscalationTriageService
 from app.main import app
 from app.rag.models import RetrievedChunk
 
@@ -39,6 +41,7 @@ SOURCE_ID = UUID("70000000-0000-4000-8000-000000000001")
 CHUNK_ID = UUID("80000000-0000-4000-8000-000000000001")
 MESSAGE_ID = UUID("90000000-0000-4000-8000-000000000001")
 ASSISTANT_MESSAGE_ID = UUID("90000000-0000-4000-8000-000000000002")
+ESCALATION_ID = UUID("a0000000-0000-4000-8000-000000000001")
 CUSTOMER_TOKEN = "A" * 43
 TOKEN_HASH = hash_customer_session_token(CUSTOMER_TOKEN)
 NOW = datetime(2026, 9, 15, 12, tzinfo=UTC)
@@ -120,6 +123,7 @@ class ApiCustomerChatGateway:
         self.feedback_calls: list[tuple] = []
         self.feedback_by_message: dict[UUID, str] = {}
         self.human_request_calls = 0
+        self.background_triage_calls = []
         self.status = "open"
         self.human_requested_at = None
 
@@ -209,10 +213,12 @@ class ApiCustomerChatGateway:
         self.human_request_calls += 1
         self.status = "human_requested"
         self.human_requested_at = NOW
-        return CustomerHumanRequestResponse(
+        return CustomerHumanRequestResult(
             conversation_id=conversation_id,
             status="human_requested",
             human_requested_at=self.human_requested_at,
+            escalation_id=ESCALATION_ID,
+            triage_status="pending",
         )
 
 
@@ -233,6 +239,12 @@ def configure_dependencies(gateway: ApiCustomerChatGateway):
     app.dependency_overrides[get_customer_chat_gateway] = lambda: gateway
     app.dependency_overrides[get_embedding_provider] = lambda: embedding
     app.dependency_overrides[get_generation_provider] = lambda: generation
+
+    async def run_triage(escalation_id):
+        assert gateway.status == "human_requested"
+        gateway.background_triage_calls.append(escalation_id)
+
+    app.dependency_overrides[get_background_triage_runner] = lambda: run_triage
     return embedding, generation
 
 
@@ -535,6 +547,12 @@ async def test_human_request_is_idempotent_and_invokes_no_ai_provider() -> None:
     assert first.json() == repeated.json()
     assert first.json()["status"] == "human_requested"
     assert gateway.human_request_calls == 2
+    assert gateway.background_triage_calls == [ESCALATION_ID, ESCALATION_ID]
+    assert set(first.json()) == {"conversation_id", "status", "human_requested_at"}
+    assert not any(
+        value in first.text
+        for value in [str(ESCALATION_ID), "triage_status", "summary", "priority", "model"]
+    )
     assert embedding.calls == 0
     assert generation.calls == 0
 
@@ -568,6 +586,30 @@ async def test_human_requested_conversation_restores_state_and_blocks_later_turn
     assert turn.status_code == 409
     assert embedding.calls == 0
     assert generation.calls == 0
+
+
+@pytest.mark.anyio
+async def test_human_request_succeeds_when_background_agent_is_not_configured() -> None:
+    from tests.test_escalation_triage import FakeGateway
+
+    customer_gateway = ApiCustomerChatGateway()
+    configure_dependencies(customer_gateway)
+    escalation_gateway = FakeGateway()
+
+    async def run_triage(escalation_id):
+        assert customer_gateway.status == "human_requested"
+        await EscalationTriageService(escalation_gateway, None).triage(escalation_id)
+
+    app.dependency_overrides[get_background_triage_runner] = lambda: run_triage
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post(
+            f"/api/chat/conversations/{CONVERSATION_ID}/human-request",
+            headers={"X-SupportPilot-Session": CUSTOMER_TOKEN},
+        )
+    assert response.status_code == 200
+    assert set(response.json()) == {"conversation_id", "status", "human_requested_at"}
+    assert escalation_gateway.fail_calls[0][2] == "triage_not_configured"
+    assert "triage" not in response.text and "escalation" not in response.text
 
 
 def parse_sse(response_text: str) -> list[tuple[str, dict]]:

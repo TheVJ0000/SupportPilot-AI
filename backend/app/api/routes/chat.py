@@ -2,7 +2,7 @@ import json
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 
 from app.ai.embeddings.base import EmbeddingProvider
@@ -28,6 +28,7 @@ from app.chat.models import (
 )
 from app.chat.security import get_customer_session_credential
 from app.chat.service import CustomerChatService
+from app.escalations.background import BackgroundTriageRunner, get_background_triage_runner
 
 router = APIRouter(prefix="/chat", tags=["customer-chat"])
 
@@ -183,13 +184,21 @@ async def set_customer_message_feedback(
 )
 async def request_customer_human_support(
     conversation_id: UUID,
+    background_tasks: BackgroundTasks,
     credential: Annotated[CustomerSessionCredential, Depends(get_customer_session_credential)],
     gateway: Annotated[CustomerChatGateway, Depends(get_customer_chat_gateway)],
+    triage_runner: Annotated[BackgroundTriageRunner, Depends(get_background_triage_runner)],
 ) -> CustomerHumanRequestResponse:
     try:
-        return await CustomerChatService(gateway).request_human_support(
+        result = await CustomerChatService(gateway).request_human_support(
             conversation_id,
             credential.token_hash,
         )
     except CustomerChatHttpError as error:
         raise HTTPException(status_code=error.status_code, detail=error.detail) from error
+    background_tasks.add_task(triage_runner, result.escalation_id)
+    return CustomerHumanRequestResponse(
+        conversation_id=result.conversation_id,
+        status=result.status,
+        human_requested_at=result.human_requested_at,
+    )

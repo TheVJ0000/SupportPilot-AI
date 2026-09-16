@@ -18,7 +18,7 @@ from app.chat.models import (
     CustomerConversationResponse,
     CustomerFeedbackResponse,
     CustomerHistoryMessage,
-    CustomerHumanRequestResponse,
+    CustomerHumanRequestResult,
     CustomerStreamComplete,
     CustomerStreamDelta,
     CustomerStreamError,
@@ -227,10 +227,12 @@ class FakeCustomerChatGateway:
 
     async def request_human_support(self, conversation_id, token_hash):
         self.human_request_calls.append((conversation_id, token_hash))
-        return CustomerHumanRequestResponse(
+        return CustomerHumanRequestResult(
             conversation_id=conversation_id,
             status="human_requested",
             human_requested_at=NOW,
+            escalation_id=UUID("a0000000-0000-4000-8000-000000000001"),
+            triage_status="pending",
         )
 
 

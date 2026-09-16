@@ -99,6 +99,10 @@ The server validates the streamed decision and complete request-local evidence-I
 
 **Objective:** Add bounded agentic behavior only for unresolved/human-requested conversations and automate escalation creation/notification safely.
 
+**Status:** Phase 6A implemented in application code and automated backend tests; all of Phase 6 is **not complete**. Human request now atomically creates a unique durable escalation placeholder and schedules best-effort background triage. A dedicated Gemini agent (`gemini-3.8-flash`, medium thinking) requests exactly one `create_escalation` tool call. The application validates strict arguments and explicitly executes the action with trusted IDs. SDK automatic execution is disabled. There is no LangGraph or model search/shell/code/database authority. Member-only read RLS, audit runs without chain-of-thought, safe failure codes, idempotent completed/recent-processing exits, and 15-minute stale recovery are included.
+
+The background task is not a durable queue. AI failure never rolls back the human request; pending/failed records remain recoverable. No notification integration, insufficient-evidence auto-triage, admin management, or deployment was added. Phase 6B must define the remaining automation/recovery behavior and verify any external service's usable free tier before adoption. Apply the new migration and run the pgTAP security suite on a Supabase test environment before relying on database behavior; Supabase CLI/Docker are unavailable locally, so that suite is not claimed as passed. Live Gemini function calling and hosted Supabase smoke tests are also unverified.
+
 **Completion criteria:**
 
 - Triage agent can classify an unresolved issue.

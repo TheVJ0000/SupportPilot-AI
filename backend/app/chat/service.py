@@ -21,7 +21,7 @@ from app.chat.models import (
     CustomerChatSessionResult,
     CustomerConversationResponse,
     CustomerFeedbackResponse,
-    CustomerHumanRequestResponse,
+    CustomerHumanRequestResult,
     CustomerStreamComplete,
     CustomerStreamDelta,
     CustomerStreamError,
@@ -146,7 +146,7 @@ class CustomerChatService:
         self,
         conversation_id: UUID,
         token_hash: str,
-    ) -> CustomerHumanRequestResponse:
+    ) -> CustomerHumanRequestResult:
         try:
             return await self._gateway.request_human_support(conversation_id, token_hash)
         except CustomerChatGatewayError as error:

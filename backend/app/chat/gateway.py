@@ -13,7 +13,7 @@ from app.chat.models import (
     CreatedCustomerSession,
     CustomerConversationResponse,
     CustomerFeedbackResponse,
-    CustomerHumanRequestResponse,
+    CustomerHumanRequestResult,
     PersistedCustomerTurn,
     StartedCustomerTurn,
 )
@@ -101,7 +101,7 @@ class CustomerChatGateway(Protocol):
         self,
         conversation_id: UUID,
         token_hash: str,
-    ) -> CustomerHumanRequestResponse: ...
+    ) -> CustomerHumanRequestResult: ...
 
     def retrieval_gateway(
         self,
@@ -332,7 +332,7 @@ class SupabaseCustomerChatGateway:
         self,
         conversation_id: UUID,
         token_hash: str,
-    ) -> CustomerHumanRequestResponse:
+    ) -> CustomerHumanRequestResult:
         operation = "request_customer_human_support"
         payload = await self._rpc(
             operation,
@@ -342,7 +342,7 @@ class SupabaseCustomerChatGateway:
             },
         )
         try:
-            return CustomerHumanRequestResponse.model_validate(_single_record(payload, operation))
+            return CustomerHumanRequestResult.model_validate(_single_record(payload, operation))
         except (TypeError, ValidationError, ValueError) as error:
             raise CustomerChatGatewayError(operation) from error
 

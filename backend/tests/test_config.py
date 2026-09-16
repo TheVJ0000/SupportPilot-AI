@@ -22,6 +22,7 @@ def test_gemini_key_is_optional_and_ai_defaults_are_safe(monkeypatch) -> None:
 
     assert settings.gemini_api_key is None
     assert settings.gemini_generation_model == "gemini-3.8-flash"
+    assert settings.gemini_triage_model == "gemini-3.8-flash"
     assert settings.embedding_provider == "gemini"
     assert settings.gemini_embedding_model == "gemini-embedding-2"
     assert settings.gemini_embedding_dimension == 768

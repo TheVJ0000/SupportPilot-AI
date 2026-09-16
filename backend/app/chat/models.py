@@ -94,6 +94,13 @@ class CustomerHumanRequestResponse(BaseModel):
     human_requested_at: AwareDatetime
 
 
+class CustomerHumanRequestResult(CustomerHumanRequestResponse):
+    """Trusted orchestration metadata, never returned to anonymous customers."""
+
+    escalation_id: UUID
+    triage_status: Literal["pending", "processing", "completed", "failed"]
+
+
 class CreatedCustomerSession(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

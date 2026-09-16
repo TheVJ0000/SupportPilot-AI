@@ -197,6 +197,8 @@ async def test_feedback_and_handoff_use_only_narrow_session_scoped_rpcs() -> Non
                     "conversation_id": str(CONVERSATION_ID),
                     "status": "human_requested",
                     "human_requested_at": EXPIRES_AT.isoformat(),
+                    "escalation_id": "a0000000-0000-4000-8000-000000000001",
+                    "triage_status": "pending",
                 }
             ],
         )

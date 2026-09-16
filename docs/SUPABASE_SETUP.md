@@ -134,6 +134,18 @@ For modern asymmetric signing keys, FastAPI validates tokens with the project's 
 
 ## Hosted smoke-test checklist
 
+### Phase 6A triage configuration
+
+Apply `202609160009_escalation_triage_foundation.sql` after the existing migrations; do not edit or reapply earlier migrations manually. It backfills pending escalation placeholders for existing `human_requested` conversations and replaces the human-request RPC with an internal result carrying escalation metadata. The public customer contract remains unchanged.
+
+Use server-only `GEMINI_API_KEY` and optional `GEMINI_TRIAGE_MODEL=gemini-3.8-flash`; never define `VITE_GEMINI_*`. This uses the existing Gemini free-tier integration and server-only `SUPABASE_SECRET_KEY` through a separate three-RPC allow-list. Do not enable billing or paid fallback, and use synthetic/non-confidential transcripts. Without Gemini, human requests still succeed and triage fails safely with `triage_not_configured` when possible. The app still starts without AI configured.
+
+On a disposable Supabase test environment, run `supabase db reset` and `supabase test db`, including `escalation_triage_security.test.sql`. Then verify a repeated human request produces one escalation, the anonymous response contains no internal triage fields, and a successful native tool call completes the matching audit attempt. Exercise missing-key/provider failure and confirm the escalation remains durable. Workspace nonmembers and anonymous browsers must not read escalation/audit rows; browser writes and triage RPC calls must be denied.
+
+FastAPI background tasks are in-process best effort, not a durable queue. Pending/failed records persist when a task does not finish; a repeated request can retry failed triage or recover processing stale by 15 minutes. No automatic recovery scheduler, notifications, or insufficient-evidence escalation is included yet. These pgTAP and hosted/Gemini smoke checks have not been claimed as executed on this development machine.
+
+On September 16, 2026, an isolated native PostgreSQL instance successfully applied the Phase 6A migration using minimal prerequisite fixtures and checked the RPC lifecycle, stale-worker fencing, audit consistency, and grants. This limited smoke check did not run the full Supabase migrations, member RLS suite, or pgTAP tests. The temporary instance was shut down afterward. Google's [current Gemini pricing](https://ai.google.dev/gemini-api/docs/pricing) lists standard `gemini-3.8-flash` input/output (including thinking) as free of charge on the Free tier; keep the project on that tier and verify its active quota before any demo. No live model call or billing change was made.
+
 Use synthetic accounts only, then verify:
 
 - registration creates the user profile through the database trigger;

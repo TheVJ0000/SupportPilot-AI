@@ -50,7 +50,7 @@ Authenticated FastAPI requests flow through one API client that applies the acti
 - uses Supabase Auth's user endpoint with the publishable key for legacy HS256 projects that cannot be verified by JWKS;
 - returns only the verified user ID and optional email from `/api/auth/me`.
 
-No JWT signing secret is requested or stored. `SUPABASE_SECRET_KEY` is not part of ordinary auth, workspace, Knowledge Base, or business RAG request handling. Phase 5A uses it only inside a narrow server-side customer-chat RPC gateway because anonymous customers have no Supabase identity.
+No JWT signing secret is requested or stored. `SUPABASE_SECRET_KEY` is not part of ordinary auth, workspace, Knowledge Base, or business RAG request handling. Phase 5A uses it inside a narrow server-side customer-chat RPC gateway because anonymous customers have no Supabase identity; Phase 6A adds a separate gateway restricted to the three internal triage RPCs.
 
 The initial Phase 2A data model contains only:
 
@@ -202,16 +202,28 @@ When evidence is insufficient, the system should not fabricate an answer. It sho
 
 ```mermaid
 flowchart LR
-    TRIGGER[Insufficient Evidence OR Customer Requests Human] --> AGENT[Bounded Support Triage Agent]
-    AGENT --> CLASSIFY[Classify Issue]
-    CLASSIFY --> PRIORITY[Determine Priority]
-    PRIORITY --> SUMMARY[Summarize Conversation]
-    SUMMARY --> TOOL[Explicitly Allowed Escalation Tool]
-    TOOL --> RECORD[(Escalation Record)]
-    RECORD --> NOTIFY[Notification Automation]
+    HUMAN[Customer Requests Human] --> ATOMIC[Atomic human_requested + pending escalation]
+    ATOMIC --> BACKGROUND[Best-effort FastAPI background task]
+    BACKGROUND --> BEGIN[Locked triage attempt + audit run]
+    BEGIN --> CONTEXT[Bounded trusted persisted transcript]
+    CONTEXT --> AGENT[Gemini requests create_escalation]
+    AGENT --> VALIDATE[Validate one tool call and arguments]
+    VALIDATE --> TOOL[Explicit application tool executor]
+    TOOL --> COMPLETE[Atomic classification + audit completion]
+    AGENT -. failure .-> FAILED[Durable escalation retained with safe failure code]
 ```
 
-The Support Triage Agent is intentionally bounded. It may inspect only the conversation and context it is explicitly given and invoke only explicitly allowed escalation actions. It must not receive unrestricted database, shell, internet, or infrastructure access.
+Phase 6A uses a dedicated `TriageAgent` abstraction, not the grounded RAG provider. It performs one bounded reasoning step and one controlled action, so native Gemini function calling is sufficient; LangGraph is intentionally not introduced. The model is not merely generating prose: it selects arguments for an explicitly declared application tool, and the application validates and executes that action. The only allowed tool is `create_escalation(category, priority, summary)`, which finalizes a database-owned placeholder rather than letting the model create arbitrary records.
+
+The Gemini adapter uses configurable `GEMINI_TRIAGE_MODEL` (default `gemini-3.8-flash`), medium thinking, and a conservative 700-token output limit. It declares the function explicitly, uses function-calling mode `ANY` restricted to that name, and disables automatic SDK execution. These settings follow the [Generate Content function-calling contract](https://ai.google.dev/gemini-api/docs/generate-content/function-calling). There are no Python callables given to Gemini, built-in tools, search, URL context, shell/code execution, retrieval, notifications, or model database access. Temporary provider failures receive at most two retries; invalid tools/arguments and authentication failures are not retried. There is no agent loop.
+
+Agent input contains only the trigger reason and recent persisted message roles/content/answer status. SQL returns at most 20 recent messages; a pure helper removes older messages first to enforce 12,000 content characters, preserves whole newest messages, and restores chronological order. No session token/hash, JWT, record IDs, emails, vectors, storage paths, or citation metadata is sent. Transcript instructions remain untrusted data. A fixed executor rejects unknown tools, validates strict Pydantic category/priority/summary arguments (summary 1–1200 trimmed characters), and binds escalation/run IDs and provider metadata from trusted application context. PostgreSQL validates them again. This enforces limited authority; it does not claim mathematical prompt-injection immunity.
+
+The human-request RPC preserves session authorization and creates/reuses the escalation in the same transaction as `human_requested`. Internal escalation ID/triage status are stripped from the unchanged anonymous public response. Only then is triage scheduled. Missing Gemini configuration marks the attempt `failed / triage_not_configured` where storage is reachable; any AI error leaves the human request and escalation intact. The background runner owns its own clients, does not rely on request-scoped resources, and never exposes triage errors to the customer.
+
+`begin_escalation_triage` locks the escalation, derives its workspace/conversation, and verifies human-request eligibility. Completed attempts and recent processing attempts exit without Gemini. Pending/failed records can start a new audited attempt. Processing older than 15 minutes has its old run marked `failed / stale_triage_recovered` before a new run starts; completion/failure must match the active attempt number, fencing stale workers out. `complete_escalation_triage` atomically updates classification and the matching `create_escalation` audit completion. `fail_escalation_triage` records only allow-listed errors. Audit records never contain prompts, transcript copies, raw payloads, or chain-of-thought.
+
+Both escalation tables have member-only SELECT RLS and no direct anon/browser/service-role writes. The separate privileged gateway exposes only begin/complete/fail RPCs, granted solely to `service_role`, with fixed empty SQL search paths. FastAPI background tasks are best effort, not durable external queue infrastructure: a crash can leave pending/processing records, and a later retry can recover stale processing. No periodic recovery/admin retry UI, notification automation, or insufficient-evidence auto-escalation is wired in Phase 6A. Those remain later work. Use only synthetic/non-confidential demo conversations on Gemini's free tier; no paid fallback or infrastructure was added.
 
 ## Multi-tenancy and isolation
 
@@ -246,4 +258,4 @@ Generation and embeddings should be called through application interfaces rather
 
 ## Database scope
 
-Phase 3C completes ingestion with explicit lifecycle metadata, replaceable embeddings, 768-dimensional pgvector storage, and one cosine HNSW index. Phase 4 adds authenticated workspace-scoped semantic retrieval, evidence-sufficiency decisions, grounded structured generation, and server-validated citations. Phase 5A adds `workspace_chat_configs`, `customer_sessions`, `conversations`, `conversation_turns`, `messages`, and `message_citations` plus narrowly granted customer-chat RPCs; Phase 5B.3 adds message feedback. Streaming remains transport-only and adds no database table or migration. Escalations and analytics remain deferred.
+Phase 3C completes ingestion with explicit lifecycle metadata, replaceable embeddings, 768-dimensional pgvector storage, and one cosine HNSW index. Phase 4 adds authenticated workspace-scoped semantic retrieval, evidence-sufficiency decisions, grounded structured generation, and server-validated citations. Phase 5A adds `workspace_chat_configs`, `customer_sessions`, `conversations`, `conversation_turns`, `messages`, and `message_citations` plus narrowly granted customer-chat RPCs; Phase 5B.3 adds message feedback. Streaming remains transport-only and adds no database table or migration. Phase 6A adds `escalations` and `escalation_triage_runs`, composite workspace integrity, consistent triage states, and atomic server-only lifecycle RPCs in a new migration. Analytics remain deferred.
