@@ -12,24 +12,26 @@ export function DashboardPage() {
   const cards = metrics
     ? ([
         ['Total conversations', metrics.total_conversations],
+        ['Resolved conversations', metrics.resolved_conversations],
+        ['Closed without resolution', metrics.closed_unresolved_conversations],
         ['AI answered conversations', metrics.ai_answered_conversations],
         ['Insufficient evidence', metrics.insufficient_evidence_conversations],
         ['Escalated conversations', metrics.escalated_conversations],
         ['Human requested', metrics.human_requested_conversations],
-        ['Helpful feedback', metrics.positive_feedback_count],
-        ['Not helpful feedback', metrics.negative_feedback_count],
         ['Open escalations', metrics.open_escalations],
-        ['High-priority escalations', metrics.high_priority_escalations],
-        ['Urgent escalations', metrics.urgent_escalations],
-        ['Knowledge ready', metrics.knowledge_ready],
-        ['Knowledge processing', metrics.knowledge_processing],
-        ['Knowledge failed', metrics.knowledge_failed],
       ] as const)
     : []
   const coverage =
     metrics && metrics.total_conversations > 0
       ? Math.round((metrics.ai_answered_conversations / metrics.total_conversations) * 100)
       : 0
+  const resolution = metrics && metrics.total_conversations > 0
+    ? Math.round((metrics.resolved_conversations / metrics.total_conversations) * 100) : 0
+  const summaries: [string, [string, number][]][] = metrics ? [
+    ['Customer feedback', [['Helpful feedback', metrics.positive_feedback_count], ['Not helpful feedback', metrics.negative_feedback_count]]],
+    ['Escalation priorities', [['High-priority escalations', metrics.high_priority_escalations], ['Urgent escalations', metrics.urgent_escalations]]],
+    ['Knowledge readiness', [['Knowledge ready', metrics.knowledge_ready], ['Knowledge processing', metrics.knowledge_processing], ['Knowledge failed', metrics.knowledge_failed]]],
+  ] : []
   return (
     <>
       <PageHeading
@@ -50,6 +52,15 @@ export function DashboardPage() {
                   <p className="mt-3 text-3xl font-semibold tabular-nums">{count}</p>
                 </article>
               ))}
+              {summaries.map(([title, rows]) => <article className={panel} key={title}>
+                <h2 className="text-xs font-medium text-slate-400">{title}</h2>
+                <dl className="mt-3 space-y-3">{rows.map(([name,count]) => <div className="flex justify-between gap-2 text-xs" key={name}><dt className="text-slate-400">{name}</dt><dd className="font-semibold tabular-nums">{count}</dd></div>)}</dl>
+              </article>)}
+              <article className={`${panel} border-emerald-300/20`}>
+                <h2 className="text-xs text-emerald-200">Overall conversation resolution</h2>
+                <p className="mt-3 text-3xl font-semibold">{resolution}%</p>
+                <p className="mt-3 text-xs leading-5 text-slate-400">Explicitly admin-resolved conversations / all conversations. AI answered does not mean AI resolved.</p>
+              </article>
               <article className={`${panel} border-cyan-300/20`}>
                 <h2 className="text-xs text-cyan-200">AI answer coverage</h2>
                 <p className="mt-3 text-3xl font-semibold">{coverage}%</p>

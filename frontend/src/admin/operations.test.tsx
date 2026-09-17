@@ -11,6 +11,8 @@ import {
   adminApi,
   AdminApiError,
   type ConversationItem,
+  type ConversationDetail,
+  type EscalationStatus,
   type Dashboard,
   type EscalationItem,
 } from './adminApi'
@@ -27,9 +29,12 @@ const B = '20000000-0000-4000-8000-000000000002'
 const C = '40000000-0000-4000-8000-000000000001'
 const E = '50000000-0000-4000-8000-000000000001'
 const TIME = '2026-09-16T12:00:00Z'
-const conversation: ConversationItem = {
+const conversation: ConversationItem & { resolved_at: null; closed_at: null } = {
   id: C,
   status: 'open',
+  resolution_outcome: 'unresolved',
+  resolved_at: null,
+  closed_at: null,
   created_at: TIME,
   updated_at: TIME,
   last_message_at: TIME,
@@ -60,6 +65,8 @@ const zero: Dashboard = {
   workspace_id: A,
   metrics: {
     total_conversations: 0,
+    resolved_conversations: 0,
+    closed_unresolved_conversations: 0,
     ai_answered_conversations: 0,
     insufficient_evidence_conversations: 0,
     escalated_conversations: 0,
@@ -141,6 +148,8 @@ function Harness({
 }
 
 beforeEach(() => {
+  vi.spyOn(adminApi, 'setConversationResolution')
+  vi.spyOn(adminApi, 'setEscalationStatus')
   vi.spyOn(adminApi, 'dashboard').mockImplementation(async (id) => ({ ...zero, workspace_id: id }))
   vi.spyOn(adminApi, 'conversations').mockImplementation(async (id) => ({
     workspace_id: id,
@@ -173,6 +182,150 @@ beforeEach(() => {
   )
   localStorage.clear()
   sessionStorage.clear()
+})
+
+function detail(status: 'open' | 'human_requested' | 'closed' = 'open', outcome: 'unresolved' | 'resolved' | 'closed_unresolved' = 'unresolved', human = false): ConversationDetail {
+  return { workspace_id: A, conversation: { ...conversation, status, resolution_outcome: outcome,
+    human_requested_at: human ? TIME : null, resolved_at: outcome === 'resolved' ? TIME : null, closed_at: status === 'closed' ? TIME : null }, messages: [], escalation: null }
+}
+
+describe('explicit conversation lifecycle', () => {
+  it.each(['open', 'human_requested'] as const)('offers only appropriate unresolved %s actions', async status => {
+    vi.mocked(adminApi.conversation).mockResolvedValue(detail(status, 'unresolved', status === 'human_requested'))
+    render(<Harness path={`/app/conversations/${C}`} />)
+    expect(await screen.findByRole('button', { name: 'Resolve conversation' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Close unresolved' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Reopen conversation' })).not.toBeInTheDocument()
+  })
+  it('allows confirmation cancellation without a mutation', async () => {
+    render(<Harness path={`/app/conversations/${C}`} />)
+    await userEvent.click(await screen.findByRole('button', { name: 'Resolve conversation' }))
+    expect(screen.getByRole('dialog')).toHaveTextContent('explicit admin decision')
+    await userEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(adminApi.setConversationResolution).not.toHaveBeenCalled()
+  })
+  it.each([
+    ['Resolve conversation', 'resolve', 'resolved'], ['Close unresolved', 'close_unresolved', 'closed_unresolved'],
+  ] as const)('updates only from successful server %s state', async (label, action, outcome) => {
+    vi.mocked(adminApi.setConversationResolution).mockResolvedValue(detail('closed', outcome))
+    render(<Harness path={`/app/conversations/${C}`} />)
+    await userEvent.click(await screen.findByRole('button', { name: label }))
+    await userEvent.click(screen.getByRole('button', { name: `Confirm ${label.toLowerCase()}` }))
+    expect(await screen.findByRole('button', { name: 'Reopen conversation' })).toBeInTheDocument()
+    expect(adminApi.setConversationResolution).toHaveBeenCalledWith(A, 'caller-token', C,
+      { expected_status: 'open', expected_resolution_outcome: 'unresolved', action }, expect.any(AbortSignal))
+    if (outcome === 'closed_unresolved') expect(screen.getByText('Closed without resolution')).toBeInTheDocument()
+    expect(localStorage.length).toBe(0)
+    expect(sessionStorage.length).toBe(0)
+  })
+  it.each([false, true])('reopens with correct human-history messaging (%s)', async human => {
+    vi.mocked(adminApi.conversation).mockResolvedValue(detail('closed', 'resolved', human))
+    vi.mocked(adminApi.setConversationResolution).mockResolvedValue(detail(human ? 'human_requested' : 'open', 'unresolved', human))
+    render(<Harness path={`/app/conversations/${C}`} />)
+    await userEvent.click(await screen.findByRole('button', { name: 'Reopen conversation' }))
+    expect(screen.getByRole('dialog')).toHaveTextContent(human ? 'AI replies will remain paused' : 'Normal customer AI replies')
+    await userEvent.click(screen.getByRole('button', { name: 'Confirm reopen conversation' }))
+    expect(await screen.findByRole('button', { name: 'Resolve conversation' })).toBeInTheDocument()
+    expect(adminApi.setConversationResolution).toHaveBeenCalledWith(A, 'caller-token', C,
+      { expected_status: 'closed', expected_resolution_outcome: 'resolved', action: 'reopen' }, expect.any(AbortSignal))
+  })
+  it('shows closed-without-resolution outcome and offers reopen', async () => {
+    vi.mocked(adminApi.conversation).mockResolvedValue(detail('closed', 'closed_unresolved'))
+    render(<Harness path={`/app/conversations/${C}`} />)
+    expect(await screen.findByText('Closed without resolution')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Reopen conversation' })).toBeInTheDocument()
+  })
+  it('handles stale mutation with refresh and no optimistic success', async () => {
+    vi.mocked(adminApi.setConversationResolution).mockRejectedValue(new AdminApiError('This record changed before your action was completed. Refresh and try again.'))
+    render(<Harness path={`/app/conversations/${C}`} />)
+    await userEvent.click(await screen.findByRole('button', { name: 'Resolve conversation' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Confirm resolve conversation' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('This record changed')
+    expect(screen.queryByRole('button', { name: 'Reopen conversation' })).not.toBeInTheDocument()
+    vi.mocked(adminApi.conversation).mockResolvedValue(detail('closed', 'resolved'))
+    await userEvent.click(screen.getByRole('button', { name: 'Refresh record' }))
+    expect(await screen.findByRole('button', { name: 'Reopen conversation' })).toBeInTheDocument()
+  })
+  it('hides raw mutation failures', async () => {
+    vi.mocked(adminApi.setConversationResolution).mockRejectedValue(new Error('private SQL/provider credentials'))
+    render(<Harness path={`/app/conversations/${C}`} />)
+    await userEvent.click(await screen.findByRole('button', { name: 'Close unresolved' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Confirm close unresolved' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Support action could not be completed')
+    expect(screen.queryByText(/private SQL/)).not.toBeInTheDocument()
+  })
+  it('disables pending controls and fences a late result after workspace switching', async () => {
+    let late!: (value: ConversationDetail) => void
+    vi.mocked(adminApi.setConversationResolution).mockImplementation(() => new Promise(resolve => { late = resolve }))
+    vi.mocked(adminApi.conversation).mockImplementation(async id => ({ ...detail(), workspace_id: id }))
+    render(<Harness path={`/app/conversations/${C}`} />)
+    await userEvent.click(await screen.findByRole('button', { name: 'Resolve conversation' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Confirm resolve conversation' }))
+    expect(screen.getByRole('button', { name: 'Confirm resolve conversation' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Cancel' })).toBeDisabled()
+    expect(screen.queryByRole('button', { name: 'Reopen conversation' })).not.toBeInTheDocument()
+    const signal = vi.mocked(adminApi.setConversationResolution).mock.calls[0][4]
+    await userEvent.selectOptions(screen.getByLabelText('Active workspace'), B)
+    expect(signal.aborted).toBe(true)
+    await screen.findByRole('button', { name: 'Resolve conversation' })
+    await act(async () => late(detail('closed', 'resolved')))
+    expect(screen.queryByRole('button', { name: 'Reopen conversation' })).not.toBeInTheDocument()
+  })
+})
+
+describe('escalation lifecycle', () => {
+  it.each([
+    ['open', ['Start work','Resolve','Close']], ['in_progress', ['Return to queue','Resolve','Close']],
+    ['resolved', ['Reopen','Close']], ['closed', ['Reopen']],
+  ] as [EscalationStatus, string[]][])('shows correct %s controls', async (status, controls) => {
+    vi.mocked(adminApi.escalation).mockResolvedValue({ workspace_id:A, escalation:{...escalation,status}, audit_runs:[],notification:null })
+    render(<Harness path={`/app/escalations/${E}`} />)
+    for (const name of controls) expect(await screen.findByRole('button',{name})).toBeInTheDocument()
+    for (const name of ['Start work','Return to queue','Resolve','Close','Reopen'].filter(name => !controls.includes(name)))
+      expect(screen.queryByRole('button',{name})).not.toBeInTheDocument()
+  })
+  it.each([
+    ['open','Start work','in_progress'], ['in_progress','Return to queue','open'], ['open','Resolve','resolved'],
+    ['in_progress','Close','closed'], ['closed','Reopen','open'],
+  ] as [EscalationStatus,string,EscalationStatus][])('handles %s / %s through server confirmation', async (before, label, after) => {
+    vi.mocked(adminApi.escalation).mockResolvedValue({workspace_id:A,escalation:{...escalation,status:before},audit_runs:[],notification:null})
+    vi.mocked(adminApi.setEscalationStatus).mockResolvedValue({workspace_id:A,escalation:{...escalation,status:after},audit_runs:[],notification:null})
+    render(<Harness path={`/app/escalations/${E}`} />)
+    await userEvent.click(await screen.findByRole('button',{name:label}))
+    if (after === 'resolved' || after === 'closed') {
+      expect(screen.getByRole('dialog')).toHaveTextContent('not the associated conversation')
+      await userEvent.click(screen.getByRole('button',{name:`Confirm ${label.toLowerCase()}`}))
+    }
+    await waitFor(() => expect(adminApi.setEscalationStatus).toHaveBeenCalledWith(A,'caller-token',E,{expected_status:before,status:after},expect.any(AbortSignal)))
+    expect(await screen.findByText(after.replaceAll('_',' '),{selector:'span'})).toBeInTheDocument()
+  })
+  it('disables pending actions, permits cancelling close confirmation, and displays conflicts safely', async () => {
+    let reject!: (error: Error) => void
+    vi.mocked(adminApi.setEscalationStatus).mockImplementation(() => new Promise((_resolve,rejection) => { reject = rejection }))
+    render(<Harness path={`/app/escalations/${E}`} />)
+    await userEvent.click(await screen.findByRole('button',{name:'Close'}))
+    await userEvent.click(screen.getByRole('button',{name:'Cancel'}))
+    expect(adminApi.setEscalationStatus).not.toHaveBeenCalled()
+    await userEvent.click(screen.getByRole('button',{name:'Start work'}))
+    for (const name of ['Start work','Resolve','Close']) expect(screen.getByRole('button',{name})).toBeDisabled()
+    await act(async () => reject(new AdminApiError('This record changed before your action was completed. Refresh and try again.')))
+    expect(await screen.findByRole('alert')).toHaveTextContent('This record changed')
+    expect(screen.getByRole('button',{name:'Refresh record'})).toBeInTheDocument()
+  })
+})
+
+describe('honest resolution analytics', () => {
+  it('uses explicit outcomes for resolution and keeps AI answer coverage separate', async () => {
+    vi.mocked(adminApi.dashboard).mockResolvedValue({...zero,metrics:{...zero.metrics,total_conversations:4,resolved_conversations:1,closed_unresolved_conversations:1,ai_answered_conversations:3}})
+    render(<Harness />)
+    expect(await screen.findByText('25%')).toBeInTheDocument()
+    expect(screen.getByText('75%')).toBeInTheDocument()
+    expect(screen.getByText('Resolved conversations')).toBeInTheDocument()
+    expect(screen.getByText('Overall conversation resolution')).toBeInTheDocument()
+    expect(screen.getByText('AI answer coverage')).toBeInTheDocument()
+    expect(screen.queryByText(/AI resolution rate/i)).not.toBeInTheDocument()
+  })
 })
 afterEach(() => {
   vi.restoreAllMocks()
@@ -230,11 +383,11 @@ describe('operations permissions and navigation', () => {
 describe('dashboard', () => {
   it('renders zero counts and 0% coverage, without inventing resolution', async () => {
     render(<Harness />)
-    expect(await screen.findByText('0%')).toBeInTheDocument()
+    expect(await screen.findAllByText('0%')).toHaveLength(2)
     expect(screen.getByText('No conversations yet.')).toBeInTheDocument()
     expect(screen.getByText('No escalations yet.')).toBeInTheDocument()
     expect(screen.getByText('AI answered conversations')).toBeInTheDocument()
-    expect(screen.queryByText(/AI resolved|resolution rate/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/AI resolution rate/i)).not.toBeInTheDocument()
   })
   it('calculates coverage and links recent records', async () => {
     vi.mocked(adminApi.dashboard).mockResolvedValue({
@@ -261,7 +414,7 @@ describe('dashboard', () => {
     render(<Harness />)
     expect(await screen.findByRole('alert')).toHaveTextContent('Owner or admin access')
     await userEvent.click(screen.getByRole('button', { name: 'Try again' }))
-    expect(await screen.findByText('0%')).toBeInTheDocument()
+    expect(await screen.findAllByText('0%')).toHaveLength(2)
   })
   it('synchronously removes old records on switching and ignores a late old response', async () => {
     let late!: (value: Dashboard) => void
@@ -277,7 +430,7 @@ describe('dashboard', () => {
     const oldSignal = vi.mocked(adminApi.dashboard).mock.calls[0][2]
     await userEvent.selectOptions(screen.getByLabelText('Active workspace'), B)
     expect(oldSignal.aborted).toBe(true)
-    expect(await screen.findByText('0%')).toBeInTheDocument()
+    expect(await screen.findAllByText('0%')).toHaveLength(2)
     await act(async () =>
       late({
         ...zero,
@@ -473,7 +626,7 @@ describe('read-only details', () => {
     expect(localStorage.length).toBe(0)
     expect(sessionStorage.length).toBe(0)
     expect(
-      screen.queryByRole('button', { name: /resolve|close|delete|reply/i }),
+      screen.queryByRole('button', { name: /delete|reply/i }),
     ).not.toBeInTheDocument()
   })
   it('renders audit attempts, safe errors and pending notification honestly', async () => {

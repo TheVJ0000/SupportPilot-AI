@@ -376,7 +376,7 @@ select throws_ok(
 
 reset role;
 update public.conversations
-set status = 'closed'
+set status = 'closed', resolution_outcome = 'closed_unresolved', closed_at = now()
 where id = (select value from feedback_test_context where key = 'second_conversation');
 set local role service_role;
 select throws_ok(
@@ -439,7 +439,7 @@ select throws_ok(
 );
 
 update public.conversations
-set status = 'closed'
+set status = 'closed', resolution_outcome = 'closed_unresolved', closed_at = now()
 where id = (select value from feedback_test_context where key = 'primary_conversation');
 select ok(
     (select human_requested_at is not null from public.conversations where id = (

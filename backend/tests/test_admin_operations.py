@@ -36,6 +36,7 @@ ZERO = {name: 0 for name in Metrics.model_fields}
 CONVERSATION = {
     "id": str(CONV),
     "status": "open",
+    "resolution_outcome": "unresolved",
     "created_at": TIME,
     "updated_at": TIME,
     "last_message_at": TIME,
@@ -73,7 +74,12 @@ DASHBOARD = {
 }
 CONV_DETAIL = {
     "workspace_id": str(WS),
-    "conversation": {**CONVERSATION, "human_requested_at": None},
+    "conversation": {
+        **CONVERSATION,
+        "human_requested_at": None,
+        "resolved_at": None,
+        "closed_at": None,
+    },
     "messages": [],
     "escalation": None,
 }

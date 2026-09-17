@@ -5,6 +5,7 @@ import { adminApi } from './adminApi'
 import { Badge, PageHeading, ResourceState } from './components'
 import { citationLocation, panel, textLink, timestamp } from './format'
 import { useAdminResource } from './useAdminResource'
+import { ConversationControls } from './LifecycleControls'
 
 export function ConversationDetailPage() {
   const { conversationId = '' } = useParams()
@@ -33,6 +34,7 @@ export function ConversationDetailPage() {
           <>
             <section className={`${panel} mb-5`}>
               <Badge value={data.conversation.status} />
+              <span className="ml-2"><Badge value={data.conversation.resolution_outcome} /></span>
               <p className="mt-4 text-xs leading-6 text-slate-400">
                 Created: {timestamp(data.conversation.created_at)}
                 <br />
@@ -41,7 +43,12 @@ export function ConversationDetailPage() {
                 Last activity: {timestamp(data.conversation.last_message_at)}
                 <br />
                 Human requested: {timestamp(data.conversation.human_requested_at)}
+                <br />
+                Resolved: {timestamp(data.conversation.resolved_at)}
+                <br />
+                Closed: {timestamp(data.conversation.closed_at)}
               </p>
+              <ConversationControls key={data.conversation.id} data={data} replace={resource.replace} refresh={resource.retry} />
             </section>
             <section aria-label="Conversation transcript" className="space-y-4">
               {data.messages.length ? (

@@ -48,7 +48,7 @@ describe('authenticated operations REST client', () => {
     )
     expect(new URL(mock.mock.calls[0][0]).searchParams.has('cursor_time')).toBe(false)
   })
-  it.each([401, 403, 404, 502, 503])(
+  it.each([401, 403, 404, 409, 502, 503])(
     'maps %s without showing provider payloads',
     async (status) => {
       vi.stubGlobal(
@@ -61,7 +61,7 @@ describe('authenticated operations REST client', () => {
       )
       await expect(
         adminApi.dashboard('workspace-1', 'token', new AbortController().signal),
-      ).rejects.toThrow(/session|access|not found|could not be loaded/)
+      ).rejects.toThrow(/session|access|not found|could not be loaded|changed/)
     },
   )
   it('rejects a mismatched workspace', async () => {
@@ -72,5 +72,26 @@ describe('authenticated operations REST client', () => {
     await expect(
       adminApi.dashboard('workspace-1', 'token', new AbortController().signal),
     ).rejects.toThrow('unexpected response')
+  })
+})
+
+describe('fixed lifecycle REST writes', () => {
+  it.each(['conversation','escalation'] as const)('sends a scoped %s PATCH with expected server state', async kind => {
+    const mock = vi.fn().mockResolvedValue({ok:true,json:async()=>({workspace_id:'workspace-1',conversation:{id:'record-1'},escalation:{id:'record-1'}})})
+    vi.stubGlobal('fetch',mock)
+    const signal = new AbortController().signal
+    const request = kind === 'conversation' ? {expected_status:'open' as const,expected_resolution_outcome:'unresolved' as const,action:'resolve' as const} : {expected_status:'open' as const,status:'in_progress' as const}
+    if (kind === 'conversation') await adminApi.setConversationResolution('workspace-1','token','record-1',request as Parameters<typeof adminApi.setConversationResolution>[3],signal)
+    else await adminApi.setEscalationStatus('workspace-1','token','record-1',request as Parameters<typeof adminApi.setEscalationStatus>[3],signal)
+    const [url,init] = mock.mock.calls[0]
+    expect(new URL(url).pathname).toBe(`/api/admin/workspaces/workspace-1/${kind === 'conversation' ? 'conversations/record-1/resolution' : 'escalations/record-1/status'}`)
+    expect(init.method).toBe('PATCH')
+    expect(JSON.parse(init.body)).toEqual(request)
+    expect(init.headers).toEqual({Authorization:'Bearer token',Accept:'application/json','Content-Type':'application/json'})
+    expect(init.signal).toBe(signal)
+  })
+  it('never exposes the conflict response body', async()=>{
+    vi.stubGlobal('fetch',vi.fn().mockResolvedValue({ok:false,status:409,json:async()=>({detail:'private SQL'})}))
+    await expect(adminApi.setEscalationStatus('workspace-1','token','record-1',{expected_status:'open',status:'closed'},new AbortController().signal)).rejects.toThrow('This record changed before your action was completed. Refresh and try again.')
   })
 })

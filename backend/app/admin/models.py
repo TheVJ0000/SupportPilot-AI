@@ -26,6 +26,8 @@ Timestamp = Annotated[AwareDatetime, BeforeValidator(timestamp_input)]
 
 Count = Annotated[int, Field(strict=True, ge=0)]
 ConversationStatus = Literal["open", "human_requested", "closed"]
+ResolutionOutcome = Literal["unresolved", "resolved", "closed_unresolved"]
+ResolutionAction = Literal["resolve", "close_unresolved", "reopen"]
 EscalationStatus = Literal["open", "in_progress", "resolved", "closed"]
 TriageStatus = Literal["pending", "processing", "completed", "failed"]
 Priority = Literal["low", "normal", "high", "urgent"]
@@ -62,6 +64,8 @@ class SafeModel(BaseModel):
 
 class Metrics(SafeModel):
     total_conversations: Count
+    resolved_conversations: Count
+    closed_unresolved_conversations: Count
     ai_answered_conversations: Count
     insufficient_evidence_conversations: Count
     escalated_conversations: Count
@@ -78,6 +82,8 @@ class Metrics(SafeModel):
     @model_validator(mode="after")
     def conversation_counts(self) -> Self:
         for count in (
+            self.resolved_conversations,
+            self.closed_unresolved_conversations,
             self.ai_answered_conversations,
             self.insufficient_evidence_conversations,
             self.escalated_conversations,
@@ -85,15 +91,27 @@ class Metrics(SafeModel):
         ):
             if count > self.total_conversations:
                 raise ValueError("Inconsistent conversation counts")
+        if (
+            self.resolved_conversations + self.closed_unresolved_conversations
+            > self.total_conversations
+        ):
+            raise ValueError("Inconsistent resolution counts")
         return self
 
 
 class ConversationMetadata(SafeModel):
     id: UUID
     status: ConversationStatus
+    resolution_outcome: ResolutionOutcome
     created_at: Timestamp
     updated_at: Timestamp
     last_message_at: Timestamp | None
+
+    @model_validator(mode="after")
+    def outcome(self) -> Self:
+        if (self.status == "closed") == (self.resolution_outcome == "unresolved"):
+            raise ValueError("Inconsistent conversation outcome")
+        return self
 
 
 class ConversationItem(ConversationMetadata):
@@ -118,6 +136,29 @@ class ConversationItem(ConversationMetadata):
 
 class ConversationRecord(ConversationMetadata):
     human_requested_at: Timestamp | None
+    resolved_at: Timestamp | None
+    closed_at: Timestamp | None
+
+    @model_validator(mode="after")
+    def resolution_times(self) -> Self:
+        if (self.status == "closed") != (self.closed_at is not None):
+            raise ValueError("Invalid closure timestamp")
+        if (self.resolution_outcome == "resolved") != (self.resolved_at is not None):
+            raise ValueError("Invalid resolution timestamp")
+        if self.resolved_at is not None and self.resolved_at != self.closed_at:
+            raise ValueError("Inconsistent resolution timestamps")
+        return self
+
+
+class ConversationResolutionRequest(SafeModel):
+    expected_status: ConversationStatus
+    expected_resolution_outcome: ResolutionOutcome
+    action: ResolutionAction
+
+
+class EscalationStatusRequest(SafeModel):
+    expected_status: EscalationStatus
+    status: EscalationStatus
 
 
 class EscalationOverview(SafeModel):

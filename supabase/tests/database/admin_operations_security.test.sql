@@ -22,13 +22,15 @@ select ('b3000000-0000-4000-8000-'||lpad(position::text,12,'0'))::uuid,
   config.public_id,lpad(position::text,64,'0'),now()+interval '1 day'
 from generate_series(1,5) as series(position) join public.workspace_chat_configs as config
 on config.workspace_id=case when position=5 then 'b2000000-0000-4000-8000-000000000002'::uuid else 'b2000000-0000-4000-8000-000000000001'::uuid end;
-insert into public.conversations(id,workspace_id,customer_session_id,status,human_requested_at,last_message_at)
+insert into public.conversations(id,workspace_id,customer_session_id,status,human_requested_at,last_message_at,resolution_outcome,closed_at)
 select ('b4000000-0000-4000-8000-'||lpad(position::text,12,'0'))::uuid,
   case when position=5 then 'b2000000-0000-4000-8000-000000000002'::uuid else 'b2000000-0000-4000-8000-000000000001'::uuid end,
   ('b3000000-0000-4000-8000-'||lpad(position::text,12,'0'))::uuid,
   case position when 2 then 'human_requested' when 3 then 'closed' else 'open' end,
   case when position=2 then now() end,
-  case when position in (4,5) then null else '2026-09-16T12:00:00Z'::timestamptz end
+  case when position in (4,5) then null else '2026-09-16T12:00:00Z'::timestamptz end,
+  case when position=3 then 'closed_unresolved' else 'unresolved' end,
+  case when position=3 then now() end
 from generate_series(1,5) as series(position);
 insert into public.conversation_turns(id,workspace_id,conversation_id,client_message_id,status,created_at)
 select ('b6000000-0000-4000-8000-'||lpad(position::text,12,'0'))::uuid,
@@ -88,7 +90,7 @@ set local request.jwt.claim.sub='b1000000-0000-4000-8000-000000000001';
 select lives_ok(query,'Owner allowed: '||query) from pg_temp.operations_calls('b2000000-0000-4000-8000-000000000001');
 select throws_ok(query,'42501',null,'Cross-workspace request denied: '||query) from pg_temp.operations_calls('b2000000-0000-4000-8000-000000000002');
 select is(public.admin_dashboard_snapshot('b2000000-0000-4000-8000-000000000001')->'metrics',
-'{"total_conversations":4,"ai_answered_conversations":1,"insufficient_evidence_conversations":1,"escalated_conversations":2,"human_requested_conversations":1,"positive_feedback_count":1,"negative_feedback_count":1,"open_escalations":1,"high_priority_escalations":1,"urgent_escalations":1,"knowledge_ready":1,"knowledge_processing":1,"knowledge_failed":1}'::jsonb,'Exact tenant-scoped metrics; repeated AI answers count once; open excludes in_progress; pending knowledge excluded');
+'{"total_conversations":4,"resolved_conversations":0,"closed_unresolved_conversations":1,"ai_answered_conversations":1,"insufficient_evidence_conversations":1,"escalated_conversations":2,"human_requested_conversations":1,"positive_feedback_count":1,"negative_feedback_count":1,"open_escalations":1,"high_priority_escalations":1,"urgent_escalations":1,"knowledge_ready":1,"knowledge_processing":1,"knowledge_failed":1}'::jsonb,'Exact tenant-scoped metrics; repeated AI answers count once; open excludes in_progress; pending knowledge excluded');
 select is(public.admin_list_conversations('b2000000-0000-4000-8000-000000000001',1)->'items'->0->>'id','b4000000-0000-4000-8000-000000000003','Timestamp ties ordered by descending UUID');
 select is(public.admin_list_conversations('b2000000-0000-4000-8000-000000000001',1)->'next_cursor',
 '{"time":"2026-09-16T12:00:00+00:00","id":"b4000000-0000-4000-8000-000000000003"}'::jsonb,'Cursor points at last returned record');

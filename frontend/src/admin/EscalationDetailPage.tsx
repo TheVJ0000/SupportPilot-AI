@@ -5,6 +5,7 @@ import { adminApi } from './adminApi'
 import { Badge, PageHeading, ResourceState } from './components'
 import { label, panel, textLink, timestamp } from './format'
 import { useAdminResource } from './useAdminResource'
+import { EscalationControls } from './LifecycleControls'
 
 export function EscalationDetailPage() {
   const { escalationId = '' } = useParams()
@@ -27,7 +28,7 @@ export function EscalationDetailPage() {
         <PageHeading
           title="Escalation detail"
           workspace={selectedWorkspace?.name ?? ''}
-          description="A bounded view of classification, agent audit attempts, and notification delivery. No management actions are available in this phase."
+          description="Manage support work state independently of conversation resolution. Classification, agent audits, and notification delivery remain view-only."
         />
       </div>
       <ResourceState {...resource}>
@@ -75,6 +76,7 @@ export function EscalationDetailPage() {
               >
                 View conversation
               </Link>
+              <EscalationControls key={escalation.id} data={data} replace={resource.replace} refresh={resource.retry} />
             </section>
             <div className="mt-5 grid gap-5 lg:grid-cols-2">
               <section className={panel}>

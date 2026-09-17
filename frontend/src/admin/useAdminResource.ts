@@ -42,5 +42,6 @@ export function useAdminResource<T>(
     error: result?.key === key ? result.error : undefined,
     loading: result?.key !== key,
     retry: () => setRevision((value) => value + 1),
+    replace: (data: T) => setResult((current) => current?.key === key ? { key, data } : current),
   }
 }

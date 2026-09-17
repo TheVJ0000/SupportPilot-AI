@@ -2,6 +2,8 @@ import { apiBaseUrl } from '../api/health'
 import type { CitationLocator } from '../chat/customerChatApi'
 
 export type ConversationStatus = 'open' | 'human_requested' | 'closed'
+export type ResolutionOutcome = 'unresolved' | 'resolved' | 'closed_unresolved'
+export type ResolutionAction = 'resolve' | 'close_unresolved' | 'reopen'
 export type EscalationStatus = 'open' | 'in_progress' | 'resolved' | 'closed'
 export type TriageStatus = 'pending' | 'processing' | 'completed' | 'failed'
 export type Priority = 'low' | 'normal' | 'high' | 'urgent'
@@ -10,6 +12,7 @@ export type TriggerReason = 'human_requested' | 'insufficient_evidence'
 export interface ConversationItem {
   id: string
   status: ConversationStatus
+  resolution_outcome: ResolutionOutcome
   created_at: string
   updated_at: string
   last_message_at: string | null
@@ -40,6 +43,8 @@ export interface EscalationItem extends EscalationOverview {
 }
 export interface Metrics {
   total_conversations: number
+  resolved_conversations: number
+  closed_unresolved_conversations: number
   ai_answered_conversations: number
   insufficient_evidence_conversations: number
   escalated_conversations: number
@@ -88,8 +93,8 @@ export interface ConversationDetail {
   workspace_id: string
   conversation: Pick<
     ConversationItem,
-    'id' | 'status' | 'created_at' | 'updated_at' | 'last_message_at'
-  > & { human_requested_at: string | null }
+    'id' | 'status' | 'resolution_outcome' | 'created_at' | 'updated_at' | 'last_message_at'
+  > & { human_requested_at: string | null; resolved_at: string | null; closed_at: string | null }
   messages: Message[]
   escalation: EscalationItem | null
 }
@@ -133,11 +138,13 @@ async function read<T extends { workspace_id: string }>(
   token: string,
   path: string,
   signal: AbortSignal,
+  body?: object,
 ): Promise<T> {
   const response = await fetch(
     `${apiBaseUrl}/api/admin/workspaces/${encodeURIComponent(workspaceId)}/${path}`,
     {
-      headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
+      headers: { Authorization: `Bearer ${token}`, Accept: 'application/json', ...(body ? { 'Content-Type': 'application/json' } : {}) },
+      ...(body ? { method: 'PATCH', body: JSON.stringify(body) } : {}),
       signal,
     },
   )
@@ -149,7 +156,9 @@ async function read<T extends { workspace_id: string }>(
           ? 'Owner or admin access is required for this workspace.'
           : response.status === 404
             ? 'This support record was not found in this workspace.'
-            : 'Support operations could not be loaded. Please try again.'
+            : response.status === 409
+              ? 'This record changed before your action was completed. Refresh and try again.'
+              : 'Support operations could not be loaded. Please try again.'
     throw new AdminApiError(message)
   }
   const data = (await response.json()) as T
@@ -168,6 +177,24 @@ function listQuery(filters: ConversationFilters | EscalationFilters, cursor: Cur
 }
 
 export const adminApi = {
+  setConversationResolution: async (
+    id: string, token: string, recordId: string,
+    request: { expected_status: ConversationStatus; expected_resolution_outcome: ResolutionOutcome; action: ResolutionAction },
+    signal: AbortSignal,
+  ) => {
+    const data = await read<ConversationDetail>(id, token, `conversations/${encodeURIComponent(recordId)}/resolution`, signal, request)
+    if (data.conversation?.id !== recordId) throw new AdminApiError('Support operations returned an unexpected response.')
+    return data
+  },
+  setEscalationStatus: async (
+    id: string, token: string, recordId: string,
+    request: { expected_status: EscalationStatus; status: EscalationStatus },
+    signal: AbortSignal,
+  ) => {
+    const data = await read<EscalationDetail>(id, token, `escalations/${encodeURIComponent(recordId)}/status`, signal, request)
+    if (data.escalation?.id !== recordId) throw new AdminApiError('Support operations returned an unexpected response.')
+    return data
+  },
   dashboard: (id: string, token: string, signal: AbortSignal) =>
     read<Dashboard>(id, token, 'dashboard', signal),
   conversations: (

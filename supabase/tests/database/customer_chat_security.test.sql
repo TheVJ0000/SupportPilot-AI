@@ -42,13 +42,21 @@ select 'other_workspace', id from public.create_workspace('Other Chat Workspace'
 reset role;
 
 select is(
-    (select count(*)::integer from public.workspace_chat_configs),
+    (select count(*)::integer from public.workspace_chat_configs
+     where workspace_id in (
+         select value from customer_chat_test_context
+         where key in ('primary_workspace', 'other_workspace')
+     )),
     2,
     'A chat configuration is automatically created for every workspace'
 );
 
 select is(
-    (select count(distinct public_id)::integer from public.workspace_chat_configs),
+    (select count(distinct public_id)::integer from public.workspace_chat_configs
+     where workspace_id in (
+         select value from customer_chat_test_context
+         where key in ('primary_workspace', 'other_workspace')
+     )),
     2,
     'Every workspace receives a distinct public chat identifier'
 );

@@ -6,6 +6,7 @@ export const button =
 export const textLink =
   'text-cyan-200 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300'
 export function label(value: string) {
+  if (value === 'closed_unresolved') return 'Closed without resolution'
   return value.replaceAll('_', ' ')
 }
 export function timestamp(value: string | null) {

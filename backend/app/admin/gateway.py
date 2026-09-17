@@ -10,10 +10,12 @@ from app.admin.models import (
     ConversationDetail,
     ConversationPage,
     ConversationQuery,
+    ConversationResolutionRequest,
     Dashboard,
     EscalationDetail,
     EscalationPage,
     EscalationQuery,
+    EscalationStatusRequest,
     SafeModel,
 )
 from app.auth.dependencies import get_authenticated_context
@@ -27,11 +29,13 @@ RpcName = Literal[
     "admin_get_conversation",
     "admin_list_escalations",
     "admin_get_escalation",
+    "admin_set_conversation_resolution",
+    "admin_set_escalation_status",
 ]
 
 
 class AdminOperationsGateway:
-    """Five fixed reads using only a publishable key and the verified caller JWT."""
+    """Fixed support reads and lifecycle writes using a publishable key and caller JWT."""
 
     def __init__(
         self, supabase_url: str, publishable_key: str, access_token: str, client: httpx.AsyncClient
@@ -66,6 +70,13 @@ class AdminOperationsGateway:
                 raise HTTPException(403, "Owner or admin access required")
             if code == "P0002":
                 raise HTTPException(404, "Support record not found")
+            if code == "28000":
+                raise HTTPException(401, "Authentication required")
+            if code in {"40001", "55000", "22023"} and name in {
+                "admin_set_conversation_resolution",
+                "admin_set_escalation_status",
+            }:
+                raise HTTPException(409, "Support record changed or transition conflicts")
             raise HTTPException(502, "Support operations could not be loaded")
         try:
             result = model.model_validate_json(response.content)
@@ -150,6 +161,56 @@ class AdminOperationsGateway:
             EscalationDetail,
         )
         if result.escalation.id != escalation_id:
+            raise HTTPException(502, "Support operations returned an invalid response")
+        return result
+
+    async def set_conversation_resolution(
+        self, workspace_id: UUID, conversation_id: UUID, request: ConversationResolutionRequest
+    ) -> ConversationDetail:
+        result = await self._read(
+            "admin_set_conversation_resolution",
+            workspace_id,
+            {
+                "target_conversation_id": str(conversation_id),
+                "expected_status": request.expected_status,
+                "expected_resolution_outcome": request.expected_resolution_outcome,
+                "requested_action": request.action,
+            },
+            ConversationDetail,
+        )
+        record = result.conversation
+        expected_outcome = {
+            "resolve": "resolved",
+            "close_unresolved": "closed_unresolved",
+            "reopen": "unresolved",
+        }[request.action]
+        expected_status = (
+            ("human_requested" if record.human_requested_at is not None else "open")
+            if request.action == "reopen"
+            else "closed"
+        )
+        if (
+            record.id != conversation_id
+            or record.resolution_outcome != expected_outcome
+            or record.status != expected_status
+        ):
+            raise HTTPException(502, "Support operations returned an invalid response")
+        return result
+
+    async def set_escalation_status(
+        self, workspace_id: UUID, escalation_id: UUID, request: EscalationStatusRequest
+    ) -> EscalationDetail:
+        result = await self._read(
+            "admin_set_escalation_status",
+            workspace_id,
+            {
+                "target_escalation_id": str(escalation_id),
+                "expected_current_status": request.expected_status,
+                "new_status": request.status,
+            },
+            EscalationDetail,
+        )
+        if result.escalation.id != escalation_id or result.escalation.status != request.status:
             raise HTTPException(502, "Support operations returned an invalid response")
         return result
 

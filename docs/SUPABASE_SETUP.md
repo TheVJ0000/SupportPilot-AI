@@ -199,3 +199,13 @@ Three existing pgTAP suites were executed through the linked database query comm
 Read-only hosted checks confirmed the migration history, RLS on all 15 application tables, and the private `knowledge-files` bucket with its 10 MB limit. Both local HTTP endpoints responded successfully. Gemini, privileged customer-chat credentials, and optional email delivery were not enabled by this setup.
 
 The hosted Auth site URL was changed from its default `http://localhost:3000` to `http://localhost:5173` using a reviewed CLI configuration diff. Only `auth.site_url` was updated; undeclared properties were preserved, and email confirmation remains enabled. The temporary pulled configuration is ignored and is not a deployment configuration committed to the repository.
+
+### Phase 7B lifecycle migration
+
+Apply migrations in order through `202609170013_admin_lifecycle_management.sql`; preserve corrective 012. Review `supabase db push --dry-run` before a normal `supabase db push`, and stop if any unexpected migration appears. Never reset the hosted project to apply this change. The linked Free development project received only pending migration 013 after that review; no hosted data was deleted.
+
+Migration 013 conservatively classifies historical closed conversations as closed without resolution. New outcomes/timestamps enforce consistency; only explicit owner/admin resolution counts toward overall resolution. AI answer coverage is separate. Authenticated admin mutations use the publishable key plus verified user JWT and expected current state, not a secret key or general UPDATE access. Escalation and conversation lifecycles do not rewrite each other; historical human-request reopening keeps AI paused.
+
+Hosted synthetic pgTAP suites ran with temporary extension setup and rollback: lifecycle (69 assertions), admin operations (86), feedback/handoff (38), customer chat (48), and semantic retrieval (28). Wrappers raise on `finish()` failure diagnostics so rollback cannot conceal failed assertions. A separate rollback-only preflight tested historical backfill before applying 013. Both local HTTP endpoints responded successfully. No manual authenticated lifecycle browser flow, full database suite, or live AI/email call is claimed.
+
+The chat regression initially failed two global-count assertions because hosted development data already existed. Those assertions now count only their synthetic workspaces; the rerun passed without changing application behavior or removing hosted records.

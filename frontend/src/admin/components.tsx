@@ -30,7 +30,7 @@ export function PageHeading({
   return (
     <header className="mb-7">
       <p className="mb-2 text-xs font-semibold uppercase tracking-widest text-cyan-300">
-        {workspace} · Read-only operations
+        {workspace} · Support operations
       </p>
       <h1 className="text-3xl font-bold tracking-tight">{title}</h1>
       <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-400">{description}</p>
@@ -87,6 +87,7 @@ export function ConversationRow({ item }: { item: ConversationItem }) {
       </div>
       <div className="flex flex-wrap gap-2">
         <Badge value={item.status} />
+        <Badge value={item.resolution_outcome} />
         {item.has_escalation && <Badge value={item.escalation_priority} />}
       </div>
     </li>
