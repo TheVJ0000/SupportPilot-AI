@@ -272,4 +272,4 @@ async def test_patch_cors_is_explicit_and_accepts_browser_preflight():
             },
         )
     assert response.status_code == 200
-    assert response.headers["access-control-allow-methods"] == "GET, POST, PATCH"
+    assert response.headers["access-control-allow-methods"] == "GET, POST, PATCH, PUT"

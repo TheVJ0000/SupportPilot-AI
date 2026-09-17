@@ -136,6 +136,8 @@ Stop after Phase 7B. Before Phase 8, perform a synthetic authenticated browser s
 
 ## Phase 8 — Embeddable widget and API polish
 
+**Preflight status (September 17, 2026):** Phase 8A has not started. Baseline suites passed (403 backend / 137 frontend); local frontend/health returned 200 and linked hosted migration history was verified through 013. No confirmed synthetic authenticated browser session was available, so no personal account/data was used for smoke testing. Live preflight exposed a blocking feedback regression: the existing PUT feedback endpoint was omitted from the explicit CORS method list. The narrow fix adds PUT, preserves configured-origin-only access and existing methods, and tests successful feedback preflight plus denied external origins/DELETE. Post-fix validation passes 406 backend tests, 137 frontend tests, Ruff, frontend lint/build and whitespace checks. No migration 014, widget code, or Phase 8B work was added; the requested preflight stop condition applies.
+
 **Objective:** Make SupportPilot usable from an external business website and polish the public API boundaries.
 
 **Completion criteria:**
