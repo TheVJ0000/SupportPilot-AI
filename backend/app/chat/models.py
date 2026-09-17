@@ -3,7 +3,7 @@ from datetime import datetime
 from typing import Literal, Self
 from uuid import UUID
 
-from pydantic import AwareDatetime, BaseModel, ConfigDict, model_validator
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, StrictBool, model_validator
 
 from app.rag.answering import PreparedGroundedEvidence
 from app.rag.models import TrustedCitation
@@ -16,11 +16,15 @@ class CustomerSessionResponse(BaseModel):
     expires_at: AwareDatetime
 
 
+class EmptyCustomerRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+
 class CustomerTurnRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     client_message_id: UUID
-    message: str
+    message: str = Field(strict=True, min_length=1, max_length=2000)
 
 
 class CustomerTurnResponse(BaseModel):
@@ -99,6 +103,7 @@ class CustomerHumanRequestResult(CustomerHumanRequestResponse):
 
     escalation_id: UUID
     triage_status: Literal["pending", "processing", "completed", "failed"]
+    is_new_request: StrictBool
 
 
 class CreatedCustomerSession(BaseModel):
@@ -176,7 +181,7 @@ class CustomerStreamComplete:
 
 @dataclass(frozen=True)
 class CustomerStreamError:
-    code: Literal["stream_failed"] = "stream_failed"
+    code: Literal["temporarily_unavailable"] = "temporarily_unavailable"
     message: str = "I couldn't complete that response right now."
 
 

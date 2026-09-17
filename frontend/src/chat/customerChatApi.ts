@@ -66,7 +66,7 @@ export type CustomerTurnStreamEvent =
   | { type: 'started'; data: CustomerTurnStartedEvent }
   | { type: 'delta'; data: { text: string } }
   | { type: 'complete'; data: CustomerTurnResult }
-  | { type: 'error'; data: { code: 'stream_failed'; message: string } }
+  | { type: 'error'; data: { code: 'stream_failed' | 'temporarily_unavailable'; message: string } }
 
 export interface CustomerTurnStreamHandlers {
   onStarted: (event: CustomerTurnStartedEvent) => void
@@ -86,7 +86,7 @@ export interface CustomerHumanRequestResult {
 }
 
 export class CustomerChatApiError extends Error {
-  constructor(public readonly kind: 'invalid-session' | 'unavailable') {
+  constructor(public readonly kind: 'invalid-session' | 'unavailable' | 'rate-limited', public readonly retryAfterSeconds?: number) {
     super(kind)
     this.name = 'CustomerChatApiError'
   }
@@ -284,7 +284,7 @@ function parseStreamFrame(frame: string): CustomerTurnStreamEvent {
   if (eventName === 'error') {
     if (
       !hasOnlyKeys(value, ['code', 'message']) ||
-      value.code !== 'stream_failed' ||
+      (value.code !== 'stream_failed' && value.code !== 'temporarily_unavailable') ||
       typeof value.message !== 'string'
     ) {
       throw new CustomerChatApiError('unavailable')
@@ -366,9 +366,27 @@ function parseHumanRequest(value: unknown): CustomerHumanRequestResult {
   return value as unknown as CustomerHumanRequestResult
 }
 
+async function httpFailure(response: Response): Promise<CustomerChatApiError> {
+  if (response.status === 401) return new CustomerChatApiError('invalid-session')
+  if (response.status === 429) {
+    try {
+      const payload: unknown = await response.json()
+      if (isRecord(payload) && isRecord(payload.error) && payload.error.code === 'rate_limited') {
+        const seconds = payload.error.retry_after_seconds
+        const header = response.headers?.get('Retry-After')
+        const fallback = header && /^[0-9]{1,4}$/.test(header) ? Number(header) : 60
+        const bounded = typeof seconds === 'number' && Number.isInteger(seconds) && seconds >= 1 && seconds <= 3600
+          ? seconds : fallback >= 1 && fallback <= 3600 ? fallback : 60
+        return new CustomerChatApiError('rate-limited', bounded)
+      }
+    } catch { /* Never use malformed or raw error text for customer messages. */ }
+  }
+  return new CustomerChatApiError('unavailable')
+}
+
 async function readResponse(response: Response): Promise<unknown> {
   if (response.status === 401) throw new CustomerChatApiError('invalid-session')
-  if (!response.ok) throw new CustomerChatApiError('unavailable')
+  if (!response.ok) throw await httpFailure(response)
   try {
     return await response.json()
   } catch {
@@ -457,7 +475,8 @@ export async function streamCustomerTurn(
     },
   )
   if (response.status === 401) throw new CustomerChatApiError('invalid-session')
-  if (!response.ok || !response.body) throw new CustomerChatApiError('unavailable')
+  if (!response.ok) throw await httpFailure(response)
+  if (!response.body) throw new CustomerChatApiError('unavailable')
   if (!response.headers.get('content-type')?.toLowerCase().includes('text/event-stream')) {
     throw new CustomerChatApiError('unavailable')
   }

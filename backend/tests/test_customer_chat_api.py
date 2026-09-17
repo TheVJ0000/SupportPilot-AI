@@ -180,7 +180,7 @@ class ApiCustomerChatGateway:
     async def fail_turn(self, *args):
         raise AssertionError("Successful API test should not fail its turn")
 
-    async def get_conversation(self, conversation_id, token_hash):
+    async def get_conversation(self, conversation_id, token_hash, *, public_request=False):
         if token_hash != TOKEN_HASH:
             raise CustomerChatGatewayError("get_customer_conversation", "28000")
         return CustomerConversationResponse(
@@ -211,6 +211,7 @@ class ApiCustomerChatGateway:
         if token_hash != TOKEN_HASH:
             raise CustomerChatGatewayError("request_customer_human_support", "28000")
         self.human_request_calls += 1
+        is_new_request = self.status == "open"
         self.status = "human_requested"
         self.human_requested_at = NOW
         return CustomerHumanRequestResult(
@@ -219,6 +220,7 @@ class ApiCustomerChatGateway:
             human_requested_at=self.human_requested_at,
             escalation_id=ESCALATION_ID,
             triage_status="pending",
+            is_new_request=is_new_request,
         )
 
 
@@ -278,7 +280,12 @@ async def test_unknown_public_chat_id_is_rejected_without_detail() -> None:
         response = await client.post(f"/api/chat/{PUBLIC_ID}/session")
 
     assert response.status_code == 404
-    assert response.json() == {"detail": "Customer chat is unavailable."}
+    assert response.json() == {
+        "error": {
+            "code": "chat_unavailable",
+            "message": "This support assistant is currently unavailable.",
+        }
+    }
 
 
 @pytest.mark.anyio
@@ -293,7 +300,12 @@ async def test_missing_secret_configuration_affects_only_customer_chat() -> None
         health = await client.get("/api/health")
 
     assert chat.status_code == 503
-    assert chat.json() == {"detail": "Customer chat is not configured yet."}
+    assert chat.json() == {
+        "error": {
+            "code": "temporarily_unavailable",
+            "message": "Support is temporarily unavailable. Please try again shortly.",
+        }
+    }
     assert health.status_code == 200
 
 
@@ -415,7 +427,7 @@ async def test_history_returns_ordered_safe_messages_with_no_session_metadata() 
 @pytest.mark.anyio
 async def test_history_restores_assistant_feedback_and_human_request_state() -> None:
     class RestoredGateway(ApiCustomerChatGateway):
-        async def get_conversation(self, conversation_id, token_hash):
+        async def get_conversation(self, conversation_id, token_hash, *, public_request=False):
             return CustomerConversationResponse(
                 conversation_id=conversation_id,
                 status="human_requested",
@@ -547,7 +559,7 @@ async def test_human_request_is_idempotent_and_invokes_no_ai_provider() -> None:
     assert first.json() == repeated.json()
     assert first.json()["status"] == "human_requested"
     assert gateway.human_request_calls == 2
-    assert gateway.background_triage_calls == [ESCALATION_ID, ESCALATION_ID]
+    assert gateway.background_triage_calls == [ESCALATION_ID]
     assert set(first.json()) == {"conversation_id", "status", "human_requested_at"}
     assert not any(
         value in first.text
@@ -784,7 +796,7 @@ async def test_stream_failure_is_sanitized_and_never_emits_complete() -> None:
     events = parse_sse(response.text)
     assert [name for name, _data in events] == ["started", "error"]
     assert events[-1][1] == {
-        "code": "stream_failed",
+        "code": "temporarily_unavailable",
         "message": "I couldn't complete that response right now.",
     }
     assert "private" not in response.text

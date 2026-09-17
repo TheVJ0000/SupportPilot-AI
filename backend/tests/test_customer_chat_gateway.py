@@ -199,6 +199,7 @@ async def test_feedback_and_handoff_use_only_narrow_session_scoped_rpcs() -> Non
                     "human_requested_at": EXPIRES_AT.isoformat(),
                     "escalation_id": "a0000000-0000-4000-8000-000000000001",
                     "triage_status": "pending",
+                    "is_new_request": True,
                 }
             ],
         )

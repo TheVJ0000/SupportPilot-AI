@@ -158,6 +158,9 @@ export function CustomerChatPage({ mode = 'hosted' }: { mode?: 'hosted' | 'embed
   const [sending, setSending] = useState(false)
   const [streamingText, setStreamingText] = useState<string | null>(null)
   const [failedOutbound, setFailedOutbound] = useState<OutboundMessage | null>(null)
+  const [turnError, setTurnError] = useState<string | null>(null)
+  const [retryAfterSeconds, setRetryAfterSeconds] = useState(0)
+  const [availabilityMessage, setAvailabilityMessage] = useState('This support assistant is currently unavailable.')
   const [conversationStatus, setConversationStatus] = useState<ConversationStatus>('open')
   const [humanRequestedAt, setHumanRequestedAt] = useState<string | null>(null)
   const [confirmingHuman, setConfirmingHuman] = useState(false)
@@ -218,8 +221,13 @@ export function CustomerChatPage({ mode = 'hosted' }: { mode?: 'hosted' | 'embed
       }
     }
 
-    void initialize().catch(() => {
-      if (active) setState('unavailable')
+    void initialize().catch((caught: unknown) => {
+      if (active) {
+        setAvailabilityMessage(caught instanceof CustomerChatApiError && caught.kind === 'rate-limited'
+          ? 'Support is receiving a lot of requests right now. Please try again shortly.'
+          : 'This support assistant is currently unavailable.')
+        setState('unavailable')
+      }
     })
     return () => {
       active = false
@@ -231,8 +239,14 @@ export function CustomerChatPage({ mode = 'hosted' }: { mode?: 'hosted' | 'embed
     messagesEndRef.current?.scrollIntoView?.({ behavior: 'smooth', block: 'nearest' })
   }, [messages, sending, streamingText])
 
+  useEffect(() => {
+    if (retryAfterSeconds <= 0) return
+    const timer = window.setTimeout(() => setRetryAfterSeconds(value => Math.max(0, value - 1)), 1000)
+    return () => window.clearTimeout(timer)
+  }, [retryAfterSeconds])
+
   async function submitOutbound(outbound: OutboundMessage, isRetry: boolean): Promise<void> {
-    if (!publicId || !session || sendingRef.current || requestingHumanRef.current || conversationStatus !== 'open') return
+    if (!publicId || !session || sendingRef.current || requestingHumanRef.current || conversationStatus !== 'open' || (isRetry && retryAfterSeconds > 0)) return
     if (!isRetry) {
       setMessages((current) => [...current, localCustomerMessage(outbound)])
       setFailedOutbound(null)
@@ -240,6 +254,7 @@ export function CustomerChatPage({ mode = 'hosted' }: { mode?: 'hosted' | 'embed
     sendingRef.current = true
     setSending(true)
     setStreamingText(null)
+    setTurnError(null)
 
     try {
       let activeSession = session
@@ -296,9 +311,15 @@ export function CustomerChatPage({ mode = 'hosted' }: { mode?: 'hosted' | 'embed
         setHumanRequestedAt(null)
         await streamWithSession(activeSession)
       }
-    } catch {
+    } catch (caught: unknown) {
       setStreamingText(null)
       setFailedOutbound(outbound)
+      if (caught instanceof CustomerChatApiError && caught.kind === 'rate-limited') {
+        setTurnError('Too many requests. Please try again shortly.')
+        setRetryAfterSeconds(caught.retryAfterSeconds ?? 60)
+      } else {
+        setTurnError("I couldn't complete that response right now. Please try again.")
+      }
     } finally {
       sendingRef.current = false
       setSending(false)
@@ -340,8 +361,10 @@ export function CustomerChatPage({ mode = 'hosted' }: { mode?: 'hosted' | 'embed
           message.id === messageId ? { ...message, feedback: result.rating } : message,
         ),
       )
-    } catch {
-      setActionError("Feedback couldn't be saved right now. Please try again.")
+    } catch (caught: unknown) {
+      setActionError(caught instanceof CustomerChatApiError && caught.kind === 'rate-limited'
+        ? "We couldn't save that feedback yet. Please try again shortly."
+        : "Feedback couldn't be saved right now. Please try again.")
     } finally {
       feedbackSubmittingRef.current = null
       setFeedbackSubmittingId(null)
@@ -365,8 +388,10 @@ export function CustomerChatPage({ mode = 'hosted' }: { mode?: 'hosted' | 'embed
       setHumanRequestedAt(result.human_requested_at)
       setConfirmingHuman(false)
       setFailedOutbound(null)
-    } catch {
-      setActionError("The human support request couldn't be recorded. Please try again.")
+    } catch (caught: unknown) {
+      setActionError(caught instanceof CustomerChatApiError && caught.kind === 'rate-limited'
+        ? "We couldn't record the request yet. Please try again shortly."
+        : "The human support request couldn't be recorded. Please try again.")
     } finally {
       requestingHumanRef.current = false
       setRequestingHuman(false)
@@ -387,7 +412,7 @@ export function CustomerChatPage({ mode = 'hosted' }: { mode?: 'hosted' | 'embed
         <section className="w-full max-w-lg rounded-3xl border border-slate-200 bg-white p-8 text-center shadow-xl shadow-slate-300/30">
           <div className="flex justify-center"><Brand compact /></div>
           <h1 className="mt-8 text-2xl font-bold">Support chat unavailable</h1>
-          <p className="mt-3 leading-7 text-slate-600">This support assistant is currently unavailable.</p>
+          <p className="mt-3 leading-7 text-slate-600">{availabilityMessage}</p>
         </section>
       </main>
     )
@@ -495,8 +520,8 @@ export function CustomerChatPage({ mode = 'hosted' }: { mode?: 'hosted' | 'embed
           )}
           {failedOutbound && !sending && (
             <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950" role="alert">
-              <p>I couldn't complete that response right now. Please try again.</p>
-              <button className="mt-2 font-bold text-cyan-800 underline underline-offset-4" onClick={() => void submitOutbound(failedOutbound, true)} type="button">Retry</button>
+              <p>{turnError ?? "I couldn't complete that response right now. Please try again."}</p>
+              <button className="mt-2 font-bold text-cyan-800 underline underline-offset-4 disabled:opacity-50" disabled={retryAfterSeconds > 0} onClick={() => void submitOutbound(failedOutbound, true)} type="button">{retryAfterSeconds > 0 ? `Retry in ${retryAfterSeconds}s` : 'Retry'}</button>
             </div>
           )}
           {actionError && (

@@ -216,7 +216,7 @@ class FakeCustomerChatGateway:
             )
         return self.persisted
 
-    async def get_conversation(self, conversation_id, token_hash):
+    async def get_conversation(self, conversation_id, token_hash, *, public_request=False):
         assert (conversation_id, token_hash) == (CONVERSATION_ID, TOKEN_HASH)
         self.history_calls += 1
         return self.history
@@ -233,6 +233,7 @@ class FakeCustomerChatGateway:
             human_requested_at=NOW,
             escalation_id=UUID("a0000000-0000-4000-8000-000000000001"),
             triage_status="pending",
+            is_new_request=True,
         )
 
 

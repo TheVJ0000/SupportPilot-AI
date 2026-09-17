@@ -1,3 +1,4 @@
+import json
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import datetime
@@ -28,6 +29,8 @@ CustomerChatRpc = Literal[
     "begin_customer_chat_turn",
     "get_customer_chat_turn_result",
     "get_customer_conversation",
+    "get_customer_conversation_history",
+    "cleanup_customer_api_rate_limits",
     "set_customer_message_feedback",
     "request_customer_human_support",
     "search_customer_chat_knowledge",
@@ -40,6 +43,8 @@ ALLOWED_CUSTOMER_CHAT_RPCS = frozenset(
         "begin_customer_chat_turn",
         "get_customer_chat_turn_result",
         "get_customer_conversation",
+        "get_customer_conversation_history",
+        "cleanup_customer_api_rate_limits",
         "set_customer_message_feedback",
         "request_customer_human_support",
         "search_customer_chat_knowledge",
@@ -87,6 +92,8 @@ class CustomerChatGateway(Protocol):
         self,
         conversation_id: UUID,
         token_hash: str,
+        *,
+        public_request: bool = False,
     ) -> CustomerConversationResponse: ...
 
     async def set_feedback(
@@ -159,7 +166,25 @@ class SupabaseCustomerChatGateway:
         except httpx.RequestError as error:
             raise CustomerChatGatewayError(function_name) from error
         if response.status_code >= 400:
-            raise CustomerChatGatewayError(function_name, self._provider_code(response))
+            code = self._provider_code(response)
+            retry = None
+            if code == "PT429":
+                retry = 60
+                try:
+                    details = response.json().get("details")
+                    parsed = (
+                        json.loads(details)
+                        if isinstance(details, str) and len(details) < 128
+                        else {}
+                    )
+                    seconds = (
+                        parsed.get("retry_after_seconds") if isinstance(parsed, dict) else None
+                    )
+                    if type(seconds) is int and 1 <= seconds <= 3600:
+                        retry = seconds
+                except (ValueError, TypeError, AttributeError):
+                    pass
+            raise CustomerChatGatewayError(function_name, code, retry)
         try:
             return response.json()
         except ValueError as error:
@@ -292,8 +317,12 @@ class SupabaseCustomerChatGateway:
         self,
         conversation_id: UUID,
         token_hash: str,
+        *,
+        public_request: bool = False,
     ) -> CustomerConversationResponse:
-        operation = "get_customer_conversation"
+        operation = (
+            "get_customer_conversation_history" if public_request else "get_customer_conversation"
+        )
         payload = await self._rpc(
             operation,
             {
@@ -305,6 +334,11 @@ class SupabaseCustomerChatGateway:
             return CustomerConversationResponse.model_validate(_single_record(payload, operation))
         except (TypeError, ValidationError, ValueError) as error:
             raise CustomerChatGatewayError(operation) from error
+
+    async def cleanup_rate_limits(self) -> None:
+        result = await self._rpc("cleanup_customer_api_rate_limits", {"max_results": 500})
+        if type(result) is not int or not 0 <= result <= 500:
+            raise CustomerChatGatewayError("cleanup_customer_api_rate_limits")
 
     async def set_feedback(
         self,

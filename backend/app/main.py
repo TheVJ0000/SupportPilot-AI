@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.routes import api_router
+from app.chat.public_contract import PublicChatProtection
 from app.core.config import get_settings
 from app.escalations.automation import lifespan
 
@@ -14,12 +15,14 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+app.add_middleware(PublicChatProtection)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,
     allow_credentials=False,
     allow_methods=["GET", "POST", "PATCH", "PUT"],
     allow_headers=["Accept", "Authorization", "Content-Type", "X-SupportPilot-Session"],
+    expose_headers=["Retry-After"],
 )
 
 app.include_router(api_router, prefix="/api")

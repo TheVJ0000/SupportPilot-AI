@@ -8,7 +8,7 @@ import httpx
 from fastapi import FastAPI
 
 from app.ai.triage.factory import create_triage_agent
-from app.chat.gateway import REQUEST_TIMEOUT
+from app.chat.gateway import REQUEST_TIMEOUT, SupabaseCustomerChatGateway
 from app.core.config import Settings, get_settings
 from app.escalations.gateway import SupabaseEscalationGateway
 from app.escalations.service import EscalationTriageService
@@ -34,12 +34,15 @@ class EscalationAutomationWorker:
         deliver: Callable[[UUID], Awaitable[None]] | None,
         *,
         sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
+        cleanup: Callable[[], Awaitable[None]] | None = None,
     ) -> None:
         self._triage_gateway = triage_gateway
         self._triage = triage
         self._notification_gateway = notification_gateway
         self._deliver = deliver
         self._sleep = sleep
+        self._cleanup = cleanup
+        self._cleanup_cycle = 0
 
     async def _process(
         self, gateway: RecoveryLister, operation: Callable[[UUID], Awaitable[None]] | None
@@ -66,6 +69,12 @@ class EscalationAutomationWorker:
         )
 
     async def cycle(self) -> None:
+        if self._cleanup_cycle == 0 and self._cleanup is not None:
+            try:
+                await self._cleanup()
+            except Exception:
+                pass
+        self._cleanup_cycle = (self._cleanup_cycle + 1) % 10
         await self._process(self._triage_gateway, self._triage)
         await self._process(self._notification_gateway, self._deliver)
 
@@ -100,6 +109,9 @@ async def automation_context(settings: Settings) -> AsyncIterator[None]:
             NotificationService(notification_gateway, notifier).deliver
             if notifier is not None
             else None,
+            cleanup=SupabaseCustomerChatGateway(
+                str(settings.supabase_url), key, client
+            ).cleanup_rate_limits,
         )
         task = asyncio.create_task(worker.run(), name="escalation-automation")
         try:

@@ -1,6 +1,6 @@
 # Embedding SupportPilot
 
-Phase 8A is complete in application code and automated tests. Phase 8B (rate limiting, abuse controls, consistent API errors, Retry-After and integration polish) and production deployment are not complete. Use synthetic, non-confidential portfolio content only.
+Phase 8, including 8A widget foundation and 8B public API hardening, is complete in application code and automated tests. Production/load tuning remains Phase 9 and deployment/framing verification remains Phase 10. Use synthetic, non-confidential portfolio content only.
 
 ## Configure and copy
 
@@ -46,12 +46,14 @@ API requests come from the SupportPilot iframe origin, not the external website.
 
 ## Independent local demo
 
+Customer API throttling is handled inside the shared SupportPilot iframe/client, not the host website. Session creation has shared per-public-ID fixed-window quotas; conversation operations use validated existing customer sessions. The public ID remains a public identifier, not an authentication secret. The opaque session token remains iframe-internal. Host websites must not call the API directly or forward customer credentials; no wildcard/external-host CORS allowance is needed. On HTTP 429, integer `Retry-After` and safe `retry_after_seconds` indicate the encountered DB window's wait. Session creation does not auto-retry; turn Retry preserves its message ID and waits through a bounded client cooldown. Feedback/human throttles show safe failure, not success. See [exact limits and API contract](PUBLIC_API.md).
+
 Use the existing setup described in README; run three terminals from the repository root:
 
 ```powershell
 # Terminal 1: existing backend virtual environment
 cd backend
-.\.venv\Scripts\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8000
+.\.venv\Scripts\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --no-access-log
 ```
 
 ```powershell
@@ -76,11 +78,12 @@ The Phase 8A manual smoke used an unused synthetic UUID, not a real workspace/pu
 
 - No launcher: check script loading, compatible public UUID, browser console's single safe warning and host CSP. Duplicate configurations keep the first widget.
 - Wrong destination: use the script from the intended SupportPilot origin; data-origin/data-backend overrides are intentionally ignored.
-- Unavailable chat: check enabled settings, public ID, migrations through 014 and existing backend customer-chat setup. Without server-only customer-chat configuration, those endpoints safely return 503. Gemini is separately required for live grounded generation. Never put either server secret in frontend/host code.
+- Unavailable chat: check enabled settings, public ID, migrations through 015 and existing backend customer-chat setup. Without server-only customer-chat configuration, those endpoints safely return 503. Gemini is separately required for live grounded generation. Never put either server secret in frontend/host code.
+- Busy/throttled chat: respect Retry-After and retry manually; do not repeatedly reload/create sessions. Creation quota is shared by everyone using that public ID. Fixed windows can allow boundary bursts and do not replace broader production abuse controls.
 - Connection refused: start backend/frontend and the independent demo on their documented ports. Check `/api/health` at port 8000 before investigating chat.
 - API/CORS error: configure the actual SupportPilot frontend origin, not the external host; preserve feedback PUT. Host HTTP/S pages must load matching secure resources in production to avoid mixed-content blocking.
 - Copy unavailable: manually select the read-only embed code. Copy failures do not change configuration.
 - Conflict: refresh settings and retry against returned server state, not a guessed optimistic state.
 - Reload loses chat: third-party storage restrictions vary by browser; verify the target browser. No host storage workaround or session-token messaging is provided.
 
-Current validation: 436 backend and 177 frontend tests passed; Ruff lint/format and frontend lint/build passed (non-blocking application bundle-size warning). Hosted migration 014 was applied after a dry run containing only 014, without reset or data deletion. Only widget configuration (25 assertions), admin operations (86) and customer chat (48) pgTAP suites were rerun in rollback transactions for this checkpoint, not the full database suite. No new AI/provider/service was introduced. Live synthetic authenticated/customer journeys, deployment framing/CSP checks and Phase 8B public abuse protection remain before a production-ready public demo.
+Current Phase 8B validation: 489 backend / 201 frontend tests passed; Ruff lint/format and frontend lint/build passed (non-blocking application bundle-size warning). Migration 015 reached hosted Free Supabase after its reviewed dry run and rollback preflight, without reset or deletion of existing customer data. Hosted public API/rate limits (60), customer chat (48) and widget configuration (25) pgTAP assertions passed in rollback transactions, not the full database suite. The external demo shell, isolated styles, iframe, close/reopen and safe unavailable state were rechecked after hardening. The synthetic ASGI API 429 smoke used a test gateway, not live DB-backed HTTP; the live session endpoint remained safe 503 because customer-chat/Gemini setup is absent. A two-connection probe was inconclusive due to stalled CLI initialization; its temporary synthetic counter was removed. No new AI/provider/service was introduced. Live synthetic authenticated/customer journeys, conclusive concurrency/load checks and deployment framing/CSP checks remain before production readiness.

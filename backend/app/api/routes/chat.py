@@ -2,7 +2,7 @@ import json
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends
 from fastapi.responses import StreamingResponse
 
 from app.ai.embeddings.base import EmbeddingProvider
@@ -25,12 +25,14 @@ from app.chat.models import (
     CustomerTurnRequest,
     CustomerTurnResponse,
     CustomerTurnStreamEvent,
+    EmptyCustomerRequest,
 )
+from app.chat.public_contract import PublicChatRoute
 from app.chat.security import get_customer_session_credential
 from app.chat.service import CustomerChatService
 from app.escalations.background import BackgroundTriageRunner, get_background_triage_runner
 
-router = APIRouter(prefix="/chat", tags=["customer-chat"])
+router = APIRouter(prefix="/chat", tags=["customer-chat"], route_class=PublicChatRoute)
 
 
 def serialize_customer_sse_event(event: CustomerTurnStreamEvent) -> bytes:
@@ -62,11 +64,12 @@ def serialize_customer_sse_event(event: CustomerTurnStreamEvent) -> bytes:
 async def create_customer_session(
     public_id: UUID,
     gateway: Annotated[CustomerChatGateway, Depends(get_customer_chat_gateway)],
+    request: EmptyCustomerRequest | None = None,
 ) -> CustomerSessionResponse:
     try:
         result = await CustomerChatService(gateway).create_session(public_id)
     except CustomerChatHttpError as error:
-        raise HTTPException(status_code=error.status_code, detail=error.detail) from error
+        raise error
     return CustomerSessionResponse(
         conversation_id=result.conversation_id,
         session_token=result.session_token,
@@ -96,7 +99,7 @@ async def create_customer_turn(
             request.message,
         )
     except CustomerChatHttpError as error:
-        raise HTTPException(status_code=error.status_code, detail=error.detail) from error
+        raise error
 
 
 @router.post("/conversations/{conversation_id}/turns/stream")
@@ -121,7 +124,7 @@ async def stream_customer_turn(
             request.message,
         )
     except CustomerChatHttpError as error:
-        raise HTTPException(status_code=error.status_code, detail=error.detail) from error
+        raise error
 
     async def event_stream():
         async for event in service.stream_prepared_turn(prepared, credential.token_hash):
@@ -153,7 +156,7 @@ async def get_customer_conversation(
             credential.token_hash,
         )
     except CustomerChatHttpError as error:
-        raise HTTPException(status_code=error.status_code, detail=error.detail) from error
+        raise error
 
 
 @router.put(
@@ -175,7 +178,7 @@ async def set_customer_message_feedback(
             request.rating,
         )
     except CustomerChatHttpError as error:
-        raise HTTPException(status_code=error.status_code, detail=error.detail) from error
+        raise error
 
 
 @router.post(
@@ -188,6 +191,7 @@ async def request_customer_human_support(
     credential: Annotated[CustomerSessionCredential, Depends(get_customer_session_credential)],
     gateway: Annotated[CustomerChatGateway, Depends(get_customer_chat_gateway)],
     triage_runner: Annotated[BackgroundTriageRunner, Depends(get_background_triage_runner)],
+    request: EmptyCustomerRequest | None = None,
 ) -> CustomerHumanRequestResponse:
     try:
         result = await CustomerChatService(gateway).request_human_support(
@@ -195,8 +199,9 @@ async def request_customer_human_support(
             credential.token_hash,
         )
     except CustomerChatHttpError as error:
-        raise HTTPException(status_code=error.status_code, detail=error.detail) from error
-    background_tasks.add_task(triage_runner, result.escalation_id)
+        raise error
+    if result.is_new_request:
+        background_tasks.add_task(triage_runner, result.escalation_id)
     return CustomerHumanRequestResponse(
         conversation_id=result.conversation_id,
         status=result.status,

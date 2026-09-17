@@ -45,25 +45,48 @@ CUSTOMER_SESSION_TTL = timedelta(days=7)
 
 
 def _gateway_http_error(error: CustomerChatGatewayError) -> CustomerChatHttpError:
+    if error.provider_code == "PT429":
+        seconds = error.retry_after_seconds
+        return CustomerChatHttpError(
+            "Too many requests. Please try again shortly.",
+            HTTPStatus.TOO_MANY_REQUESTS,
+            code="rate_limited",
+            retry_after_seconds=seconds if type(seconds) is int and 1 <= seconds <= 3600 else 60,
+        )
     if error.operation == "create_customer_chat_session" and error.provider_code in {
         "22023",
         "P0002",
     }:
-        return CustomerChatHttpError("Customer chat is unavailable.", HTTPStatus.NOT_FOUND)
+        return CustomerChatHttpError(
+            "Customer chat is unavailable.", HTTPStatus.NOT_FOUND, code="chat_unavailable"
+        )
     if error.provider_code == "28000":
         return CustomerChatHttpError(
             "The customer session is invalid or expired.",
             HTTPStatus.UNAUTHORIZED,
+            code="invalid_session",
         )
     if error.provider_code == "54000":
         return CustomerChatHttpError(
             "This conversation has reached its message limit.",
             HTTPStatus.CONFLICT,
+            code="conversation_not_open",
         )
     if error.provider_code in {"42501", "55000"}:
         return CustomerChatHttpError(
             "The conversation is not available for this request.",
             HTTPStatus.CONFLICT,
+            code="chat_unavailable" if error.provider_code == "42501" else "conversation_not_open",
+        )
+    if error.provider_code == "22023":
+        return CustomerChatHttpError(
+            "The request is invalid.", HTTPStatus.BAD_REQUEST, code="invalid_request"
+        )
+    if error.provider_code == "P0002":
+        return CustomerChatHttpError(
+            "The conversation is unavailable.",
+            HTTPStatus.NOT_FOUND,
+            code="conversation_unavailable",
         )
     return CustomerChatHttpError(
         "Customer chat is temporarily unavailable.",
@@ -121,7 +144,9 @@ class CustomerChatService:
         token_hash: str,
     ) -> CustomerConversationResponse:
         try:
-            return await self._gateway.get_conversation(conversation_id, token_hash)
+            return await self._gateway.get_conversation(
+                conversation_id, token_hash, public_request=True
+            )
         except CustomerChatGatewayError as error:
             raise _gateway_http_error(error) from error
 
@@ -206,6 +231,7 @@ class CustomerChatService:
             raise CustomerChatHttpError(
                 "This customer message is already being processed.",
                 HTTPStatus.CONFLICT,
+                code="turn_in_progress",
             )
 
         try:
@@ -355,6 +381,7 @@ class CustomerChatService:
             raise CustomerChatHttpError(
                 "This customer message is already being processed.",
                 HTTPStatus.CONFLICT,
+                code="turn_in_progress",
             )
 
         try:

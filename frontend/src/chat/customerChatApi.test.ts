@@ -18,6 +18,37 @@ const MESSAGE_ID = '90000000-0000-4000-8000-000000000001'
 const PUBLIC_ID = '10000000-0000-4000-8000-000000000001'
 const SESSION_TOKEN = 'A'.repeat(43)
 
+describe('public rate-limit envelope', () => {
+  const operations = [
+    () => createCustomerSession(PUBLIC_ID),
+    () => getCustomerConversation(CONVERSATION_ID, SESSION_TOKEN),
+    () => submitCustomerTurn(CONVERSATION_ID, SESSION_TOKEN, CLIENT_MESSAGE_ID, 'Demo question'),
+    () => streamCustomerTurn(CONVERSATION_ID, SESSION_TOKEN, CLIENT_MESSAGE_ID, 'Demo question', { onStarted: vi.fn(), onDelta: vi.fn(), onComplete: vi.fn() }),
+    () => setCustomerMessageFeedback(CONVERSATION_ID, SESSION_TOKEN, MESSAGE_ID, 'positive'),
+    () => requestCustomerHumanSupport(CONVERSATION_ID, SESSION_TOKEN),
+  ]
+  it.each(operations.map((operation, index) => [index, operation] as const))('handles throttling for public operation %s without retrying or raw text', async (_, operation) => {
+    const fetch = vi.fn().mockResolvedValue(response({ error: { code: 'rate_limited', message: 'private SQL debug', retry_after_seconds: 25 } }, 429))
+    vi.stubGlobal('fetch', fetch)
+    await expect(operation()).rejects.toMatchObject({ kind: 'rate-limited', retryAfterSeconds: 25 })
+    expect(fetch).toHaveBeenCalledTimes(1)
+  })
+  it.each([0, -1, 3601, 1.5, '60', null, true, 3600])('bounds retry metadata %s', async seconds => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(response({ error: { code: 'rate_limited', retry_after_seconds: seconds } }, 429)))
+    await expect(createCustomerSession(PUBLIC_ID)).rejects.toMatchObject({ kind: 'rate-limited', retryAfterSeconds: seconds === 3600 ? 3600 : 60 })
+  })
+  it.each([null, {}, { error: { code: 'PT429', message: 'private SQL' } }])('degrades malformed public errors to a generic safe failure', async payload => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(response(payload, 429)))
+    await expect(createCustomerSession(PUBLIC_ID)).rejects.toMatchObject({ kind: 'unavailable' })
+  })
+  it('uses a bounded integer Retry-After header when the safe envelope omits seconds', async () => {
+    const throttled = response({ error: { code: 'rate_limited' } }, 429)
+    Object.assign(throttled, { headers: new Headers({ 'Retry-After': '19' }) })
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(throttled))
+    await expect(createCustomerSession(PUBLIC_ID)).rejects.toMatchObject({ kind: 'rate-limited', retryAfterSeconds: 19 })
+  })
+})
+
 function response(json: unknown, status = 200): Response {
   return { ok: status >= 200 && status < 300, status, json: async () => json } as Response
 }
