@@ -186,4 +186,14 @@ Use synthetic accounts only, then verify:
 - retrying replaces the old chunk set atomically, while a failed replacement preserves the prior complete set;
 - successful files remain `pending`, not `ready`, until a later processing phase.
 
-This repository run did not have a hosted project configured, so these checks have not been claimed as executed.
+Earlier repository runs did not have a hosted project configured, so the full checklist above was not claimed as executed.
+
+### September 17, 2026 hosted setup verification
+
+A new Free development project was linked using the Supabase CLI. Migrations 001–011 and the corrective migration 012 were applied without a database reset. Local frontend/backend URL and publishable-key configuration remains in the ignored root `.env`; no credentials or project reference are committed.
+
+Hosted PostgreSQL exposed an invalid composite-row/scalar `INTO` assignment in migration 007. Its initial-install definition was corrected, and migration 012 carries the corrected function for existing databases. Migration 012 also explicitly qualifies pgvector distance operators under the retrieval functions' empty search paths, preserving existing authorization checks and grants.
+
+Three existing pgTAP suites were executed through the linked database query command with synthetic fixtures, transactional test-extension setup, and rollback: authentication/workspace isolation (9 assertions), semantic retrieval (28), and customer chat (48). A temporary wrapper raises on any `finish()` diagnostic so failures cannot be hidden by the final rollback. The tests exposed and corrected unsupported `unlike` assertions (the documented name is `unalike`) and one incorrect fixture character count. These three suites passed; the remaining suites and interactive registration/email confirmation were not claimed as verified.
+
+Read-only hosted checks confirmed the migration history, RLS on all 15 application tables, and the private `knowledge-files` bucket with its 10 MB limit. Both local HTTP endpoints responded successfully. Gemini, privileged customer-chat credentials, and optional email delivery were not enabled by this setup.

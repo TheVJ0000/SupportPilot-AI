@@ -356,14 +356,13 @@ security definer
 set search_path = ''
 as $$
 declare
-    config_record public.workspace_chat_configs%rowtype;
+    config_record record;
     generated_session_id uuid := gen_random_uuid();
     generated_conversation_id uuid := gen_random_uuid();
-    selected_workspace_name text;
     created_timestamp timestamptz := now();
 begin
-    select config, workspace.name
-    into config_record, selected_workspace_name
+    select config.workspace_id, config.public_id, workspace.name as workspace_name
+    into config_record
     from public.workspace_chat_configs as config
     join public.workspaces as workspace on workspace.id = config.workspace_id
     where config.public_id = target_public_id
@@ -405,7 +404,7 @@ begin
     customer_session_id := generated_session_id;
     conversation_id := generated_conversation_id;
     workspace_id := config_record.workspace_id;
-    workspace_name := selected_workspace_name;
+    workspace_name := config_record.workspace_name;
     expires_at := session_expires_at;
     return next;
 end;

@@ -98,7 +98,7 @@ select ok(
     'Conversation foreign keys enforce matching session and workspace ownership'
 );
 
-select unlike(
+select unalike(
     pg_get_function_arguments(
         'public.search_customer_chat_knowledge(uuid,text,jsonb,text,text,integer,integer)'::regprocedure
     ),
@@ -342,7 +342,7 @@ values
     ('95000000-0000-4000-8000-000000000001',
      '94000000-0000-4000-8000-000000000001',
      (select value from customer_chat_test_context where key = 'primary_workspace'),
-     0, 'Use the account reset form.', repeat('c', 64), 28,
+     0, 'Use the account reset form.', repeat('c', 64), char_length('Use the account reset form.'),
      '{"kind":"faq"}'::jsonb, pg_temp.vector_json(1, 0)::text::extensions.vector),
     ('95000000-0000-4000-8000-000000000002',
      '94000000-0000-4000-8000-000000000002',
@@ -371,7 +371,7 @@ select results_eq(
     'Customer retrieval derives workspace and returns only compatible ready knowledge'
 );
 
-select unlike(
+select unalike(
     pg_get_function_result(
         'public.search_customer_chat_knowledge(uuid,text,jsonb,text,text,integer,integer)'::regprocedure
     ),

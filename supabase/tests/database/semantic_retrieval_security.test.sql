@@ -245,7 +245,7 @@ select results_eq(
     'Citation locators are returned unchanged'
 );
 
-select unlike(
+select unalike(
     pg_get_function_result(
         'public.search_knowledge_chunks(uuid,jsonb,text,text,integer,integer)'::regprocedure
     ),
