@@ -7,6 +7,11 @@ import tseslint from 'typescript-eslint'
 export default tseslint.config(
   { ignores: ['dist'] },
   {
+    files: ['public/supportpilot-widget.js'],
+    extends: [js.configs.recommended],
+    languageOptions: { ecmaVersion: 2023, sourceType: 'script', globals: globals.browser },
+  },
+  {
     files: ['**/*.{ts,tsx}'],
     extends: [js.configs.recommended, ...tseslint.configs.recommended],
     languageOptions: {

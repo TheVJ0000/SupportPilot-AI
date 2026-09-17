@@ -108,6 +108,7 @@ export function AppShell() {
                   ]
                 : []),
               { label: 'Knowledge Base', to: '/app/knowledge' },
+              ...(canViewOperations ? [{ label: 'Widget', to: '/app/widget' }] : []),
               { label: 'Workspace', to: '/app/workspaces' },
             ].map((item) => (
               <NavLink

@@ -95,3 +95,26 @@ describe('fixed lifecycle REST writes', () => {
     await expect(adminApi.setEscalationStatus('workspace-1','token','record-1',{expected_status:'open',status:'closed'},new AbortController().signal)).rejects.toThrow('This record changed before your action was completed. Refresh and try again.')
   })
 })
+
+describe('fixed widget configuration REST client', () => {
+  it('reads safe scoped widget configuration using only caller authorization', async () => {
+    const config={workspace_id:'workspace-1',workspace_name:'Demo',public_id:'10000000-0000-4000-8000-000000000001',is_enabled:true}
+    const fetch=vi.fn().mockResolvedValue({ok:true,json:async()=>config})
+    vi.stubGlobal('fetch',fetch)
+    expect(await adminApi.getWidgetConfig('workspace-1','caller-token',new AbortController().signal)).toEqual(config)
+    expect(new URL(fetch.mock.calls[0][0]).pathname).toBe('/api/admin/workspaces/workspace-1/widget')
+    expect(fetch.mock.calls[0][1].headers).toEqual({Authorization:'Bearer caller-token',Accept:'application/json'})
+  })
+  it('sends a fixed PATCH with expected enabled state', async () => {
+    const fetch=vi.fn().mockResolvedValue({ok:true,json:async()=>({workspace_id:'workspace-1',is_enabled:false})})
+    vi.stubGlobal('fetch',fetch)
+    await adminApi.setWidgetEnabled('workspace-1','caller-token',{expected_enabled:true,enabled:false},new AbortController().signal)
+    expect(fetch.mock.calls[0][1].method).toBe('PATCH')
+    expect(JSON.parse(fetch.mock.calls[0][1].body)).toEqual({expected_enabled:true,enabled:false})
+  })
+  it.each([409,502,503])('hides raw widget %s errors', async status => {
+    vi.stubGlobal('fetch',vi.fn().mockResolvedValue({ok:false,status,json:async()=>({message:'private SQL'})}))
+    await expect(adminApi.setWidgetEnabled('workspace-1','caller-token',{expected_enabled:true,enabled:false},new AbortController().signal)).rejects.toThrow(status === 409
+      ? 'The widget configuration changed before this action was completed. Refresh and try again.' : "We couldn't update the support widget right now.")
+  })
+})

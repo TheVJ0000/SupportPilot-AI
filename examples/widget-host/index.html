@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Acme Demo Store · Synthetic widget host</title>
+  <style>
+    body{margin:0;background:#faf7f0;color:#28382f;font:16px/1.7 Georgia,serif}header,main,footer{max-width:980px;margin:auto;padding:28px}nav{display:flex;flex-wrap:wrap;gap:22px}a{color:#456951}h1{font-size:clamp(32px,6vw,58px);line-height:1.2}section{padding:24px 0;border-top:1px solid #d9ded1}.badge{font:12px system-ui,sans-serif;text-transform:uppercase;letter-spacing:2px}button{background:#ca661c;color:white;padding:12px;border:0}#widget-setup{font:14px/1.6 system-ui,sans-serif}
+  </style>
+</head>
+<body>
+  <header><p class="badge">Synthetic portfolio demonstration · Not a real business</p><nav aria-label="Store"><a href="#home">Home</a><a href="#products">Products</a><a href="#shipping">Shipping</a><a href="#returns">Returns</a><a href="#contact">Contact</a></nav></header>
+  <main id="home"><p class="badge">Acme Demo Store</p><h1>Everyday essentials.<br>Thoughtfully imagined.</h1><p>A fictional independent store demonstrating support embedded from a different origin.</p><button type="button">Demo store button</button>
+    <section id="products"><h2>Products</h2><p>Demo notebooks, ceramic cups, and reusable bags. No purchases are accepted.</p></section>
+    <section id="shipping"><h2>Shipping</h2><p>Synthetic policy: demonstration orders ship in 3–5 business days.</p></section>
+    <section id="returns"><h2>Returns</h2><p>Synthetic policy: unused demo items may be returned within 30 days.</p></section>
+    <section id="contact"><h2>Contact</h2><p>This page collects no customer information.</p><p id="widget-setup" role="status">Provide a synthetic publicId in the URL to load the widget.</p></section>
+  </main><footer>Acme Demo Store is fictional. SupportPilot runs separately.</footer>
+  <script>
+    (function () {
+      var params = new URLSearchParams(window.location.search);
+      var publicId = params.get('publicId') || '';
+      var status = document.getElementById('widget-setup');
+      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(publicId)) return;
+      try {
+        // Only this synthetic demo accepts an origin override. The widget never does.
+        var origin = new URL(params.get('supportOrigin') || 'http://localhost:5173');
+        if (!/^https?:$/.test(origin.protocol) || origin.username || origin.password || origin.pathname !== '/' || origin.search || origin.hash) throw new Error('Invalid origin');
+        var script = document.createElement('script');
+        script.src = origin.origin + '/supportpilot-widget.js';
+        script.setAttribute('data-supportpilot-public-id', publicId);
+        script.async = true;
+        script.onerror = function () { status.textContent = 'SupportPilot could not be loaded. Check the demo SupportPilot origin.'; };
+        script.onload = function () { status.textContent = 'SupportPilot widget loaded from a separate application origin.'; };
+        status.textContent = 'Loading SupportPilot from a separate application origin…';
+        document.body.append(script);
+      } catch (_) { status.textContent = 'Provide a valid http(s) SupportPilot origin.'; }
+    }());
+  </script>
+</body>
+</html>

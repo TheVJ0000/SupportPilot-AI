@@ -146,7 +146,8 @@ function assistantMessage(result: CustomerTurnResult): CustomerMessage {
   }
 }
 
-export function CustomerChatPage() {
+export function CustomerChatPage({ mode = 'hosted' }: { mode?: 'hosted' | 'embedded' }) {
+  const embedded = mode === 'embedded'
   const { publicId } = useParams<{ publicId: string }>()
   const [session, setSession] = useState<StoredCustomerChatSession | null>(null)
   const [messages, setMessages] = useState<CustomerMessage[]>([])
@@ -374,7 +375,7 @@ export function CustomerChatPage() {
 
   if (state === 'loading') {
     return (
-      <main className="grid min-h-screen place-items-center bg-slate-100 px-5 text-slate-700">
+      <main data-chat-mode={mode} className="grid min-h-screen place-items-center bg-slate-100 px-5 text-slate-700">
         <p aria-live="polite" className="font-medium">Opening support chat…</p>
       </main>
     )
@@ -382,7 +383,7 @@ export function CustomerChatPage() {
 
   if (state === 'unavailable' || session === null) {
     return (
-      <main className="grid min-h-screen place-items-center bg-slate-100 px-5 text-slate-800">
+      <main data-chat-mode={mode} className="grid min-h-screen place-items-center bg-slate-100 px-5 text-slate-800">
         <section className="w-full max-w-lg rounded-3xl border border-slate-200 bg-white p-8 text-center shadow-xl shadow-slate-300/30">
           <div className="flex justify-center"><Brand compact /></div>
           <h1 className="mt-8 text-2xl font-bold">Support chat unavailable</h1>
@@ -401,9 +402,9 @@ export function CustomerChatPage() {
     !requestingHuman
 
   return (
-    <main className="min-h-screen bg-[radial-gradient(circle_at_top,#cffafe_0,#f8fafc_42%,#e2e8f0_100%)] px-3 py-3 text-slate-900 sm:px-6 sm:py-7">
-      <section className="mx-auto flex min-h-[calc(100vh-1.5rem)] max-w-4xl flex-col overflow-hidden rounded-[2rem] border border-white/80 bg-slate-50/95 shadow-2xl shadow-slate-400/25 backdrop-blur sm:min-h-[calc(100vh-3.5rem)]">
-        <header className="flex items-center justify-between gap-5 border-b border-slate-200 bg-white px-5 py-4 sm:px-7">
+    <main data-chat-mode={mode} className={embedded ? 'h-dvh overflow-hidden bg-slate-50 text-slate-900' : 'min-h-screen bg-[radial-gradient(circle_at_top,#cffafe_0,#f8fafc_42%,#e2e8f0_100%)] px-3 py-3 text-slate-900 sm:px-6 sm:py-7'}>
+      <section className={embedded ? 'flex h-full min-h-0 flex-col overflow-hidden bg-slate-50' : 'mx-auto flex min-h-[calc(100vh-1.5rem)] max-w-4xl flex-col overflow-hidden rounded-[2rem] border border-white/80 bg-slate-50/95 shadow-2xl shadow-slate-400/25 backdrop-blur sm:min-h-[calc(100vh-3.5rem)]'}>
+        <header className={`flex shrink-0 flex-wrap items-center justify-between border-b border-slate-200 bg-white ${embedded ? 'gap-2 px-4 py-3' : 'gap-5 px-5 py-4 sm:px-7'}`}>
           <div className="min-w-0">
             <p className="text-xs font-bold uppercase tracking-[0.18em] text-cyan-700">Support assistant</p>
             <h1 className="mt-1 truncate text-lg font-bold text-slate-900 sm:text-xl">{session.workspaceName}</h1>
@@ -419,7 +420,7 @@ export function CustomerChatPage() {
                 Request a human
               </button>
             )}
-            <div className="hidden text-slate-900 sm:block"><Brand compact /></div>
+            {!embedded && <div className="hidden text-slate-900 sm:block"><Brand compact /></div>}
           </div>
         </header>
 
@@ -457,7 +458,7 @@ export function CustomerChatPage() {
           aria-label="Conversation messages"
           aria-live="polite"
           aria-relevant="additions text"
-          className="flex-1 overflow-y-auto px-4 py-6 sm:px-8"
+          className={`min-h-0 flex-1 overflow-y-auto ${embedded ? 'px-3 py-4' : 'px-4 py-6 sm:px-8'}`}
           role="log"
         >
           {messages.length === 0 ? (
@@ -506,7 +507,7 @@ export function CustomerChatPage() {
           <div ref={messagesEndRef} />
         </div>
 
-        <form className="border-t border-slate-200 bg-white p-4 sm:p-6" onSubmit={handleSubmit}>
+        <form className={`shrink-0 border-t border-slate-200 bg-white ${embedded ? 'p-3' : 'p-4 sm:p-6'}`} onSubmit={handleSubmit}>
           <label className="sr-only" htmlFor="customer-message">Message</label>
           <div className="flex items-end gap-3 rounded-2xl border border-slate-300 bg-slate-50 p-2 focus-within:border-cyan-500 focus-within:ring-4 focus-within:ring-cyan-100">
             <textarea

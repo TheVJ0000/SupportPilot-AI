@@ -133,6 +133,13 @@ export type EscalationFilters = {
 
 export class AdminApiError extends Error {}
 
+export interface WidgetConfig {
+  workspace_id: string
+  workspace_name: string
+  public_id: string
+  is_enabled: boolean
+}
+
 async function read<T extends { workspace_id: string }>(
   workspaceId: string,
   token: string,
@@ -159,7 +166,12 @@ async function read<T extends { workspace_id: string }>(
             : response.status === 409
               ? 'This record changed before your action was completed. Refresh and try again.'
               : 'Support operations could not be loaded. Please try again.'
-    throw new AdminApiError(message)
+    throw new AdminApiError(path === 'widget' && body
+      ? response.status === 409
+        ? 'The widget configuration changed before this action was completed. Refresh and try again.'
+        : response.status === 401 || response.status === 403 || response.status === 404
+          ? message : "We couldn't update the support widget right now."
+      : message)
   }
   const data = (await response.json()) as T
   if (!data || data.workspace_id !== workspaceId)
@@ -177,6 +189,10 @@ function listQuery(filters: ConversationFilters | EscalationFilters, cursor: Cur
 }
 
 export const adminApi = {
+  getWidgetConfig: (id: string, token: string, signal: AbortSignal) =>
+    read<WidgetConfig>(id, token, 'widget', signal),
+  setWidgetEnabled: (id: string, token: string, request: { expected_enabled: boolean; enabled: boolean }, signal: AbortSignal) =>
+    read<WidgetConfig>(id, token, 'widget', signal, request),
   setConversationResolution: async (
     id: string, token: string, recordId: string,
     request: { expected_status: ConversationStatus; expected_resolution_outcome: ResolutionOutcome; action: ResolutionAction },

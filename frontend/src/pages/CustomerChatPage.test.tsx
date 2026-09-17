@@ -1,9 +1,9 @@
 import { act, fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { MemoryRouter, Route, Routes } from 'react-router-dom'
+import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { CustomerChatApiError, type CustomerConversation } from '../chat/customerChatApi'
-import { CustomerChatPage } from './CustomerChatPage'
+import { AppRoutes } from '../App'
 
 const mocks = vi.hoisted(() => ({
   createCustomerSession: vi.fn(),
@@ -88,12 +88,10 @@ function conversation(
   }
 }
 
-function renderChat() {
+function renderChat(mode: 'hosted' | 'embedded' = 'hosted') {
   return render(
-    <MemoryRouter initialEntries={[`/chat/${PUBLIC_ID}`]}>
-      <Routes>
-        <Route path="/chat/:publicId" element={<CustomerChatPage />} />
-      </Routes>
+    <MemoryRouter initialEntries={[`/${mode === 'embedded' ? 'embed' : 'chat'}/${PUBLIC_ID}`]}>
+      <AppRoutes />
     </MemoryRouter>,
   )
 }
@@ -125,6 +123,47 @@ describe('hosted customer chat page', () => {
       human_requested_at: '2026-09-15T12:05:00Z',
     })
     vi.spyOn(globalThis.crypto, 'randomUUID').mockReturnValue(CLIENT_MESSAGE_ID)
+  })
+
+  it.each(['hosted','embedded'] as const)('routes %s chat through shared session initialization with the correct presentation', async mode => {
+    renderChat(mode)
+    expect(await screen.findByRole('heading',{name:'Example Help'})).toBeInTheDocument()
+    expect(screen.getByRole('main')).toHaveAttribute('data-chat-mode',mode)
+    if (mode === 'embedded') expect(screen.getByRole('main')).toHaveClass('h-dvh','overflow-hidden')
+    expect(mocks.createCustomerSession).toHaveBeenCalledWith(PUBLIC_ID,expect.any(AbortSignal))
+  })
+  it('restores embedded history, citations and feedback and records a human request', async () => {
+    localStorage.setItem(STORAGE_KEY,JSON.stringify(storedSession()))
+    mocks.getCustomerConversation.mockResolvedValue(conversation([{
+      id:ASSISTANT_MESSAGE_ID,role:'assistant',content:'Embedded synthetic answer.',answer_status:'answered',created_at:'2026-09-15T12:00:00Z',feedback:null,
+      citations:[{source_id:PUBLIC_ID,source_title:'Demo returns policy',source_type:'faq',chunk_index:0,locator:{kind:'faq'}}],
+    }]))
+    renderChat('embedded')
+    expect(await screen.findByText('Embedded synthetic answer.')).toBeInTheDocument()
+    expect(screen.getByText(/Demo returns policy/)).toBeInTheDocument()
+    expect(mocks.createCustomerSession).not.toHaveBeenCalled()
+    await userEvent.click(screen.getByRole('button',{name:/mark this answer as helpful/i}))
+    expect(mocks.setCustomerMessageFeedback).toHaveBeenCalledWith(CONVERSATION_ID,SESSION_TOKEN,ASSISTANT_MESSAGE_ID,'positive')
+    await userEvent.click(screen.getByRole('button',{name:'Request a human'}))
+    await userEvent.click(screen.getByRole('button',{name:'Confirm'}))
+    expect(await screen.findByText('AI messaging is paused for this conversation.')).toBeInTheDocument()
+    expect(screen.getByRole('textbox',{name:'Message'})).toBeDisabled()
+  })
+  it('keeps streaming and completion on the shared embedded chat path', async () => {
+    renderChat('embedded')
+    const input=await screen.findByRole('textbox',{name:'Message'})
+    await userEvent.type(input,'How do I reset my account?')
+    await userEvent.click(screen.getByRole('button',{name:'Send'}))
+    expect(await screen.findByText('Use the account reset link.')).toBeInTheDocument()
+    expect(mocks.submitCustomerTurn).toHaveBeenCalledWith(CONVERSATION_ID,SESSION_TOKEN,CLIENT_MESSAGE_ID,'How do I reset my account?')
+    expect(screen.getByRole('button',{name:/mark this answer as helpful/i})).toBeInTheDocument()
+  })
+  it('uses the shared safe embedded unavailable state', async () => {
+    mocks.createCustomerSession.mockRejectedValue(new Error('private provider detail'))
+    renderChat('embedded')
+    expect(await screen.findByText('This support assistant is currently unavailable.')).toBeInTheDocument()
+    expect(screen.getByRole('main')).toHaveAttribute('data-chat-mode','embedded')
+    expect(screen.queryByText(/private provider/)).not.toBeInTheDocument()
   })
 
   it('creates and stores the minimum session state when none exists', async () => {

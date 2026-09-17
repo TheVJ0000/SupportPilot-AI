@@ -17,6 +17,8 @@ from app.admin.models import (
     EscalationQuery,
     EscalationStatusRequest,
     SafeModel,
+    WidgetConfig,
+    WidgetEnabledRequest,
 )
 from app.auth.dependencies import get_authenticated_context
 from app.auth.models import AuthenticatedRequestContext
@@ -31,6 +33,8 @@ RpcName = Literal[
     "admin_get_escalation",
     "admin_set_conversation_resolution",
     "admin_set_escalation_status",
+    "admin_get_widget_config",
+    "admin_set_widget_enabled",
 ]
 
 
@@ -75,6 +79,7 @@ class AdminOperationsGateway:
             if code in {"40001", "55000", "22023"} and name in {
                 "admin_set_conversation_resolution",
                 "admin_set_escalation_status",
+                "admin_set_widget_enabled",
             }:
                 raise HTTPException(409, "Support record changed or transition conflicts")
             raise HTTPException(502, "Support operations could not be loaded")
@@ -88,6 +93,22 @@ class AdminOperationsGateway:
 
     async def dashboard(self, workspace_id: UUID) -> Dashboard:
         return await self._read("admin_dashboard_snapshot", workspace_id, {}, Dashboard)
+
+    async def widget(self, workspace_id: UUID) -> WidgetConfig:
+        return await self._read("admin_get_widget_config", workspace_id, {}, WidgetConfig)
+
+    async def set_widget_enabled(
+        self, workspace_id: UUID, request: WidgetEnabledRequest
+    ) -> WidgetConfig:
+        result = await self._read(
+            "admin_set_widget_enabled",
+            workspace_id,
+            {"expected_is_enabled": request.expected_enabled, "new_is_enabled": request.enabled},
+            WidgetConfig,
+        )
+        if result.is_enabled != request.enabled:
+            raise HTTPException(502, "Support operations returned an invalid response")
+        return result
 
     @staticmethod
     def _params(query: ConversationQuery | EscalationQuery) -> dict:

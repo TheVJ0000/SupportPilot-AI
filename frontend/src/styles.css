@@ -22,6 +22,11 @@ body {
   min-height: 100vh;
 }
 
+/* Embedded chat can be narrower than the hosted application's 320px minimum. */
+body:has([data-chat-mode="embedded"]) {
+  min-width: 0;
+}
+
 button,
 a {
   -webkit-tap-highlight-color: transparent;

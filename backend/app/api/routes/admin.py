@@ -14,10 +14,24 @@ from app.admin.models import (
     EscalationPage,
     EscalationQuery,
     EscalationStatusRequest,
+    WidgetConfig,
+    WidgetEnabledRequest,
 )
 
 router = APIRouter(prefix="/admin/workspaces/{workspace_id}", tags=["admin operations"])
 Gateway = Annotated[AdminOperationsGateway, Depends(get_admin_gateway)]
+
+
+@router.get("/widget", response_model=WidgetConfig)
+async def widget(workspace_id: UUID, gateway: Gateway) -> WidgetConfig:
+    return await gateway.widget(workspace_id)
+
+
+@router.patch("/widget", response_model=WidgetConfig)
+async def widget_enabled(
+    workspace_id: UUID, request: WidgetEnabledRequest, gateway: Gateway
+) -> WidgetConfig:
+    return await gateway.set_widget_enabled(workspace_id, request)
 
 
 @router.get("/dashboard", response_model=Dashboard)

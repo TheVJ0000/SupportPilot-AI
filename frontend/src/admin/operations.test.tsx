@@ -23,6 +23,7 @@ import { ConversationDetailPage } from './ConversationDetailPage'
 import { EscalationsPage } from './EscalationsPage'
 import { EscalationDetailPage } from './EscalationDetailPage'
 import { citationLocation } from './format'
+import { WidgetPage } from './WidgetPage'
 
 const A = '20000000-0000-4000-8000-000000000001'
 const B = '20000000-0000-4000-8000-000000000002'
@@ -138,6 +139,7 @@ function Harness({
                 <Route path="conversations/:conversationId" element={<ConversationDetailPage />} />
                 <Route path="escalations" element={<EscalationsPage />} />
                 <Route path="escalations/:escalationId" element={<EscalationDetailPage />} />
+                <Route path="widget" element={<WidgetPage />} />
               </Route>
             </Route>
           </Routes>
@@ -148,6 +150,8 @@ function Harness({
 }
 
 beforeEach(() => {
+  vi.spyOn(adminApi, 'getWidgetConfig').mockImplementation(async id => ({workspace_id:id,workspace_name:id === A ? 'Workspace A' : 'Workspace B',public_id:id === A ? C : E,is_enabled:true}))
+  vi.spyOn(adminApi, 'setWidgetEnabled')
   vi.spyOn(adminApi, 'setConversationResolution')
   vi.spyOn(adminApi, 'setEscalationStatus')
   vi.spyOn(adminApi, 'dashboard').mockImplementation(async (id) => ({ ...zero, workspace_id: id }))
@@ -312,6 +316,86 @@ describe('escalation lifecycle', () => {
     await act(async () => reject(new AdminApiError('This record changed before your action was completed. Refresh and try again.')))
     expect(await screen.findByRole('alert')).toHaveTextContent('This record changed')
     expect(screen.getByRole('button',{name:'Refresh record'})).toBeInTheDocument()
+  })
+})
+
+describe('widget settings', () => {
+  it.each(['owner','admin'] as const)('provides %s widget navigation and current-origin public-only snippet', async role => {
+    render(<Harness role={role} path="/app/widget" />)
+    expect(await screen.findByRole('heading',{name:'Support widget'})).toBeInTheDocument()
+    expect(screen.getByRole('link',{name:'Widget'})).toHaveAttribute('href','/app/widget')
+    const code = await screen.findByRole('textbox',{name:'Embed code'})
+    expect(code).toHaveValue(`<script\n  src="${window.location.origin}/supportpilot-widget.js"\n  data-supportpilot-public-id="${C}"\n  async\n></script>`)
+    expect((code as HTMLTextAreaElement).value).not.toMatch(new RegExp(`${A}|caller-token|Supabase|sessionToken`))
+    expect(screen.getByRole('link',{name:`${window.location.origin}/chat/${C}`})).toBeInTheDocument()
+  })
+  it('denies member direct access and hides navigation', async () => {
+    render(<Harness role="member" path="/app/widget" />)
+    expect(await screen.findByRole('heading',{name:'Knowledge Base access'})).toBeInTheDocument()
+    expect(screen.queryByRole('link',{name:'Widget'})).not.toBeInTheDocument()
+    expect(adminApi.getWidgetConfig).not.toHaveBeenCalled()
+  })
+  it('copies code accessibly and offers a manual-copy fallback', async () => {
+    const copy = vi.fn().mockResolvedValue(undefined)
+    vi.stubGlobal('navigator',Object.assign(Object.create(navigator),{clipboard:{writeText:copy}}))
+    render(<Harness path="/app/widget" />)
+    await userEvent.click(await screen.findByRole('button',{name:'Copy embed code'}))
+    expect(copy).toHaveBeenCalledWith(expect.stringContaining(`data-supportpilot-public-id="${C}"`))
+    expect(await screen.findByText('Embed code copied.')).toBeInTheDocument()
+    copy.mockRejectedValue(new Error('private clipboard detail'))
+    await userEvent.click(screen.getByRole('button',{name:'Copy embed code'}))
+    expect(await screen.findByText(/Copy is unavailable/)).toBeInTheDocument()
+    expect(screen.queryByText(/private clipboard/)).not.toBeInTheDocument()
+  })
+  it.each([true,false])('toggles %s using expected state and waits for returned config', async enabled => {
+    vi.mocked(adminApi.getWidgetConfig).mockResolvedValue({workspace_id:A,workspace_name:'Workspace A',public_id:C,is_enabled:enabled})
+    let complete!: (value: Awaited<ReturnType<typeof adminApi.getWidgetConfig>>) => void
+    vi.mocked(adminApi.setWidgetEnabled).mockImplementation(() => new Promise(resolve => {complete=resolve}))
+    render(<Harness path="/app/widget" />)
+    await userEvent.click(await screen.findByRole('button',{name:enabled ? 'Disable widget' : 'Enable widget'}))
+    expect(screen.getByRole('button',{name:'Saving…'})).toBeDisabled()
+    expect(screen.getByText(enabled ? 'Enabled' : 'Disabled')).toBeInTheDocument()
+    expect(adminApi.setWidgetEnabled).toHaveBeenCalledWith(A,'caller-token',{expected_enabled:enabled,enabled:!enabled},expect.any(AbortSignal))
+    await act(async () => complete({workspace_id:A,workspace_name:'Workspace A',public_id:C,is_enabled:!enabled}))
+    expect(await screen.findByRole('button',{name:enabled ? 'Enable widget' : 'Disable widget'})).toBeInTheDocument()
+  })
+  it.each([true,false])('shows safe conflict/generic errors (%s)', async conflict => {
+    vi.mocked(adminApi.setWidgetEnabled).mockRejectedValue(conflict ? new AdminApiError('The widget configuration changed before this action was completed. Refresh and try again.') : new Error('private SQL detail'))
+    render(<Harness path="/app/widget" />)
+    await userEvent.click(await screen.findByRole('button',{name:'Disable widget'}))
+    expect(await screen.findByRole('alert')).toHaveTextContent(conflict ? 'configuration changed' : "We couldn't update the support widget right now.")
+    expect(screen.queryByText(/private SQL/)).not.toBeInTheDocument()
+    expect(screen.getByRole('button',{name:'Refresh widget configuration'})).toBeInTheDocument()
+  })
+  it('fences late mutations, removes old public ID, and clears copy state on workspace switching', async () => {
+    let complete!: (value: Awaited<ReturnType<typeof adminApi.getWidgetConfig>>) => void
+    vi.mocked(adminApi.setWidgetEnabled).mockImplementation(() => new Promise(resolve => {complete=resolve}))
+    render(<Harness path="/app/widget" />)
+    await userEvent.click(await screen.findByRole('button',{name:'Disable widget'}))
+    const signal=vi.mocked(adminApi.setWidgetEnabled).mock.calls[0][3]
+    await userEvent.selectOptions(screen.getByLabelText('Active workspace'),B)
+    expect(signal.aborted).toBe(true)
+    const code=await screen.findByRole('textbox',{name:'Embed code'})
+    expect((code as HTMLTextAreaElement).value).toContain(E)
+    expect((code as HTMLTextAreaElement).value).not.toContain(C)
+    await act(async () => complete({workspace_id:A,workspace_name:'Workspace A',public_id:C,is_enabled:false}))
+    expect(screen.getByRole('button',{name:'Disable widget'})).toBeInTheDocument()
+    expect((screen.getByRole('textbox',{name:'Embed code'}) as HTMLTextAreaElement).value).toContain(E)
+    expect(localStorage.length).toBe(0)
+    expect(sessionStorage.length).toBe(0)
+  })
+  it('ignores late reads after switching workspace', async () => {
+    let complete!: (value: Awaited<ReturnType<typeof adminApi.getWidgetConfig>>) => void
+    vi.mocked(adminApi.getWidgetConfig).mockImplementation(id => id === A ? new Promise(resolve => {complete=resolve}) : Promise.resolve({workspace_id:B,workspace_name:'Workspace B',public_id:E,is_enabled:false}))
+    render(<Harness path="/app/widget" />)
+    await waitFor(() => expect(adminApi.getWidgetConfig).toHaveBeenCalled())
+    const signal=vi.mocked(adminApi.getWidgetConfig).mock.calls[0][2]
+    await userEvent.selectOptions(screen.getByLabelText('Active workspace'),B)
+    expect(signal.aborted).toBe(true)
+    await screen.findByRole('button',{name:'Enable widget'})
+    await act(async () => complete({workspace_id:A,workspace_name:'Workspace A',public_id:C,is_enabled:true}))
+    expect(screen.getByRole('button',{name:'Enable widget'})).toBeInTheDocument()
+    expect((screen.getByRole('textbox',{name:'Embed code'}) as HTMLTextAreaElement).value).not.toContain(C)
   })
 })
 

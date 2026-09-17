@@ -16,6 +16,7 @@ import { ConversationsPage } from './admin/ConversationsPage'
 import { ConversationDetailPage } from './admin/ConversationDetailPage'
 import { EscalationsPage } from './admin/EscalationsPage'
 import { EscalationDetailPage } from './admin/EscalationDetailPage'
+import { WidgetPage } from './admin/WidgetPage'
 
 function AuthenticatedApplication() {
   return (
@@ -38,6 +39,7 @@ export function AppRoutes() {
     <Routes>
       <Route path="/" element={<LandingPage />} />
       <Route path="/chat/:publicId" element={<CustomerChatPage />} />
+      <Route path="/embed/:publicId" element={<CustomerChatPage mode="embedded" />} />
       <Route element={<BusinessAuthBoundary />}>
         <Route element={<PublicOnlyRoute />}>
           <Route path="/login" element={<LoginPage />} />
@@ -54,6 +56,7 @@ export function AppRoutes() {
               <Route path="conversations/:conversationId" element={<ConversationDetailPage />} />
               <Route path="escalations" element={<EscalationsPage />} />
               <Route path="escalations/:escalationId" element={<EscalationDetailPage />} />
+              <Route path="widget" element={<WidgetPage />} />
             </Route>
           </Route>
         </Route>

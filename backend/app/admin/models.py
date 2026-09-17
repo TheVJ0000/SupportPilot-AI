@@ -62,6 +62,18 @@ class SafeModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class WidgetConfig(SafeModel):
+    workspace_id: UUID
+    workspace_name: Annotated[str, Field(strict=True, min_length=1, max_length=100)]
+    public_id: UUID
+    is_enabled: StrictBool
+
+
+class WidgetEnabledRequest(SafeModel):
+    expected_enabled: StrictBool
+    enabled: StrictBool
+
+
 class Metrics(SafeModel):
     total_conversations: Count
     resolved_conversations: Count
