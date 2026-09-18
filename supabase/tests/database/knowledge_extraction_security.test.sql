@@ -390,7 +390,7 @@ select throws_ok(
         )
     $$,
     '55000',
-    'Only a processing source can fail extraction',
+    'Only active extraction can be failed',
     'Failure only works from processing state'
 );
 

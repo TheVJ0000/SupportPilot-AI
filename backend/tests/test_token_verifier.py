@@ -84,6 +84,8 @@ async def test_verifier_accepts_a_valid_asymmetric_token(signing_key_pair) -> No
         {"iss": "https://wrong-issuer.example.test/auth/v1"},
         {"aud": "wrong-audience"},
         {"exp": datetime.now(UTC) - timedelta(minutes=1)},
+        {"exp": []},
+        {"exp": float("inf")},
         {"sub": None},
     ],
 )

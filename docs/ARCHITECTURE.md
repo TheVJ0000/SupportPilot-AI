@@ -325,6 +325,48 @@ Validation passed 489 backend and 201 frontend tests, Ruff lint/format, frontend
 
 ## Multi-tenancy and isolation
 
+### Phase 9A final-schema security baseline
+
+Phase 9A is complete: 521 backend / 201 frontend tests and all sixteen hosted
+rollback pgTAP suites (1,004 assertions) PASS, with no suite skipped. Both real
+last-slot PostgreSQL races PASS, with independent backend sessions, observed lock
+waits, exactly one claim/one PT429, final counts 30/6 and verified fixture cleanup.
+Lint/format/build/whitespace checks pass. This does not complete all Phase 9.
+
+Phase 9A validates the final sixteen-table RLS/privilege matrix plus private
+knowledge-files Storage across anon, non-member, member, admin, owner and narrow
+server paths. The live application catalog contains sixty functions, including
+fifty-three SECURITY DEFINER functions with empty search_path, static qualified
+references and no PUBLIC execution or dynamic SQL. Migration 016 removes unused
+inherited service-role table CRUD and thirteen business-RPC grants; twenty-two
+business/admin RPCs remain JWT-authorized and nineteen necessary customer/worker
+RPCs remain service-only. No schema function bodies or applied migrations 001–015
+are rewritten. Managed platform privileges still make a compromised server key
+dangerous; RPC restriction is not a complete platform sandbox.
+
+HS256 uses mandatory Supabase Auth signature validation, then explicit local
+issuer/audience/expiry/subject checks bound to the verified identity. Malformed
+successful Auth responses fail safely. DOCX XML is bounded and parsed with
+entity resolution disabled, rejecting DTDs and external relationships across
+UTF-8/UTF-16 and attribute encodings. Normal RAG remains tool-free, with strict
+request-local citation labels and trusted metadata; extra model citation URLs
+are rejected. Triage retains its single validated create_escalation action.
+
+The real limiter race uses two independent PostgreSQL transactions synchronized
+behind a coordinator row lock, requiring exactly one success and one PT429.
+Synthetic counters are removed and absence checked. Fixed-window tests use
+actual DB time and seeded neighboring minute/hour windows, including non-UTC
+timezone alignment; they do not mock the clock or claim wall-clock load testing.
+CLI operations must be serialized with direct database tests because CLI queries
+can rotate ephemeral login credentials. All pgTAP fixtures are synthetic and
+rolled back, including pgtap extension creation and migration preflight grants.
+
+See [the security review](SECURITY_REVIEW.md) for the complete function inventory,
+table/actor/CRUD matrix, exact executed-suite results, dependency snapshot and
+remaining risks. Phase 9B Playwright, 9C formal RAG/live synthetic validation and
+possible 9D performance testing remain separate; deployment-header/framing/CSP
+checks remain Phase 10. Earlier Phase 8 checkpoint results above are historical.
+
 Major business-owned entities will use `workspace_id` so every business's content can be scoped consistently.
 
 ```mermaid

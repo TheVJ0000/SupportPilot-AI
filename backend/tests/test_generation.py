@@ -191,6 +191,23 @@ async def test_conversation_context_remains_separate_from_factual_evidence() -> 
         {"decision": "insufficient_evidence", "answer": "", "evidence_ids": ["E1"]},
         {
             "decision": "answerable",
+            "answer": "Text",
+            "evidence_ids": ["https://synthetic.example.test"],
+        },
+        {
+            "decision": "answerable",
+            "answer": "Text",
+            "evidence_ids": ["E1"],
+            "source_url": "https://synthetic.example.test",
+        },
+        {
+            "decision": "answerable",
+            "answer": "Text",
+            "evidence_ids": ["E1"],
+            "citations": [{"url": "https://synthetic.example.test"}],
+        },
+        {
+            "decision": "answerable",
             "answer": "x" * 4001,
             "evidence_ids": ["E1"],
         },

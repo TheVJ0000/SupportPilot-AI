@@ -177,7 +177,8 @@ select is((select count(*)::integer from public.escalation_triage_runs), 3, 'Own
 set local request.jwt.claim.sub = '92000000-0000-0000-0000-000000000002';
 select is((select count(*)::integer from public.escalation_triage_runs), 0, 'Nonmember cannot read audit rows');
 reset role;
-update public.conversations set status = 'closed'
+update public.conversations set status = 'closed', resolution_outcome = 'closed_unresolved',
+    closed_at = now()
 where id = (select value from triage_test_context where key = 'other_conversation');
 set local role service_role;
 select throws_ok($$select public.begin_escalation_triage((select value from triage_test_context where key = 'other_escalation'))$$,

@@ -162,6 +162,31 @@ Final checks: **489 backend / 201 frontend tests**, Ruff lint/format, frontend l
 
 ## Phase 9 — Testing, RAG evaluation and security hardening
 
+**Phase 9A — security/database baseline complete (September 18, 2026).**
+All sixteen hosted rollback pgTAP suites pass **1,004 assertions**, with none
+skipped. The final-schema matrix covers sixteen application tables and private
+Storage, every application function (60 total / 53 SECURITY DEFINER), relevant
+CRUD/RPC grants, and cross-workspace owner/admin/customer attacks. Both real
+PostgreSQL last-slot races PASS: two independent sessions wait on locks, one
+claims and one receives PT429, counters finish at 30/6, and fixtures are removed.
+Database-time minute/hour selection, dual-limit atomicity and replay/retry pass.
+Migration 016 removes unnecessary inherited service-role table/business-RPC
+grants without editing migrations 001–015. JWT malformed/legacy claim and encoded
+DOCX XML gaps are fixed. Final validation: **521 backend / 201 frontend tests**,
+Ruff lint/format, frontend lint/build and Git whitespace checks PASS. No new
+feature, paid service, dependency or provider was introduced. See
+[the complete review, suite inventory and residual risks](SECURITY_REVIEW.md).
+
+**Phase 9 is not complete.** Phase 9B Playwright end-to-end journeys and Phase 9C
+formal RAG evaluation plus synthetic live Gemini validation remain unstarted;
+possible Phase 9D load/performance regression remains separate. Safely configured
+customer-server/Gemini credentials and synthetic authenticated access are needed
+before live journeys (email configuration only for notification delivery).
+Storage API HTTP byte-deletion is not claimed by SQL tests. Fixed-window bursts,
+shared-widget availability, aggregate AI-budget/bot protection, XSS/key compromise
+and production capacity remain limitations. Deployment/framing/CSP, exact hosted
+CORS/Auth redirects, logs and renewed free-tier checks remain Phase 10.
+
 **Objective:** Raise the project from working demo to credible professional portfolio quality through broad testing, evaluation, and security review.
 
 **Completion criteria:**

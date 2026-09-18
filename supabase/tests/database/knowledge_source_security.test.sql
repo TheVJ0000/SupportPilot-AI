@@ -1,6 +1,6 @@
 begin;
 
-select plan(25);
+select plan(26);
 
 insert into auth.users (id, email, raw_user_meta_data)
 values
@@ -51,6 +51,8 @@ select lives_ok(
     'An owner can create an FAQ source'
 );
 
+reset role;
+-- created_by is intentionally withheld from browser column grants.
 select is(
     (
         select count(id)::integer
@@ -194,6 +196,8 @@ from public.begin_file_knowledge_source(
     1024
 );
 
+reset role;
+-- Creator and trusted Storage path are deliberately server-only columns.
 select ok(
     exists (
         select 1
@@ -208,6 +212,7 @@ select ok(
     'File initialization derives creator, uploading status, source UUID, and trusted path'
 );
 
+set local role authenticated;
 select ok(
     not app_private.can_upload_knowledge_object('../malformed/path.pdf'),
     'Malformed Storage paths fail closed'
@@ -281,18 +286,13 @@ select is(
     'An ordinary member can read a workspace knowledge object'
 );
 
-select is(
-    (
-        with deleted as (
-            delete from storage.objects
-            where bucket_id = 'knowledge-files'
-            returning id
-        )
-        select count(*)::integer from deleted
-    ),
-    0,
+select throws_ok(
+    $$delete from storage.objects where bucket_id = 'knowledge-files' returning id$$,
+    '42501', null,
     'An ordinary member cannot delete a knowledge object'
 );
+select ok(not app_private.can_delete_knowledge_object((select storage_path from knowledge_test_context
+where key='owner-file')),'Storage API deletion policy denies an ordinary member');
 
 set local request.jwt.claim.sub = '22000000-0000-0000-0000-000000000002';
 

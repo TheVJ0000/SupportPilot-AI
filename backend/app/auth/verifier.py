@@ -74,7 +74,13 @@ class SupabaseTokenVerifier:
             )
         except PyJWKClientConnectionError as error:
             raise AuthenticationServiceUnavailableError from error
-        except (InvalidTokenError, PyJWKClientError, AttributeError) as error:
+        except (
+            InvalidTokenError,
+            PyJWKClientError,
+            AttributeError,
+            TypeError,
+            OverflowError,
+        ) as error:
             raise AuthenticationError from error
 
         return self._identity_from_claims(claims)
@@ -101,10 +107,35 @@ class SupabaseTokenVerifier:
             user_data = response.json()
         except ValueError as error:
             raise AuthenticationServiceUnavailableError from error
-
-        return self._identity_from_claims(
+        if not isinstance(user_data, dict):
+            raise AuthenticationServiceUnavailableError
+        # The Auth server above verifies the HS256 signature. Only after its
+        # success, independently enforce our business issuer/audience/expiry and
+        # bind the signed subject to the server-verified identity. Never use
+        # unverified decoding alone as authorization.
+        try:
+            claims = jwt.decode(
+                token,
+                algorithms=[LEGACY_ALGORITHM],
+                audience="authenticated",
+                issuer=self._issuer,
+                options={
+                    "verify_signature": False,
+                    "verify_exp": True,
+                    "verify_aud": True,
+                    "verify_iss": True,
+                    "verify_sub": True,
+                    "require": ["exp", "iss", "aud", "sub"],
+                },
+            )
+        except (InvalidTokenError, TypeError, OverflowError) as error:
+            raise AuthenticationError from error
+        identity = self._identity_from_claims(
             {"sub": user_data.get("id"), "email": user_data.get("email")}
         )
+        if self._identity_from_claims(claims).user_id != identity.user_id:
+            raise AuthenticationError
+        return identity
 
     @staticmethod
     def _identity_from_claims(claims: dict[str, Any]) -> AuthenticatedUser:

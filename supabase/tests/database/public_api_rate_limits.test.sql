@@ -75,6 +75,7 @@ select is((select count(*) from public.messages where conversation_id=(select co
 delete from public.customer_api_rate_limits where scope='turn_minute' and subject_id=(select customer_session_id from rate_fixture where label='A');
 select throws_ok($$select public.begin_customer_chat_turn((select conversation_id from rate_fixture where label='A'),repeat('a',64),'f5000000-0000-4000-8000-000000000002','Another synthetic question')$$,'PT429','Too many requests','Turn hourly quota independently enforced');
 select is((select count(*) from public.conversation_turns where conversation_id=(select conversation_id from rate_fixture where label='A')),1::bigint,'Hourly rejection leaves no turn');
+select is((select count(*) from public.customer_api_rate_limits where scope='turn_minute' and subject_id=(select customer_session_id from rate_fixture where label='A')),0::bigint,'Turn hourly rejection atomically rolls back minute claim');
 select lives_ok($$select public.begin_customer_chat_turn((select conversation_id from rate_fixture where label='B'),repeat('b',64),'f5000000-0000-4000-8000-000000000003','Separate session question')$$,'Separate session turn quota isolated');
 create temporary table retry_turn as select * from public.begin_customer_chat_turn((select conversation_id from rate_fixture where label='C'),repeat('c',64),'f5000000-0000-4000-8000-000000000004','Retry question');
 select lives_ok($$select public.fail_customer_chat_turn((select turn_id from retry_turn),repeat('c',64),'generation_failed')$$,'Synthetic attempt fails safely');
@@ -104,6 +105,8 @@ select is((select count(*) from public.escalations where conversation_id=(select
 select throws_ok($$select public.request_customer_human_support((select conversation_id from rate_fixture where label='C'),repeat('a',64))$$,'28000',null,'Wrong human-request token rejected');
 
 -- Deterministic retry metadata and transactionally bounded maintenance.
+-- Refresh the exact DB-time window: a long hosted run can cross a minute.
+select pg_temp.seed_rate('history_minute',(select customer_session_id from rate_fixture where label='A'),60);
 do $$
 declare details text; seconds integer;
 begin

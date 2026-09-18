@@ -3,6 +3,7 @@ from pathlib import PurePosixPath
 from zipfile import BadZipFile, ZipFile, is_zipfile
 
 from docx import Document
+from docx.oxml import parse_xml
 from docx.table import Table
 from docx.text.paragraph import Paragraph
 from pypdf import PdfReader
@@ -126,12 +127,28 @@ def _validate_docx_archive(content: bytes) -> None:
                         xml_content = xml_member.read(MAX_DOCX_MEMBER_BYTES + 1)
                     if len(xml_content) > MAX_DOCX_MEMBER_BYTES:
                         raise ExtractionError("document_too_large")
+                    original_xml = xml_content
                     xml_content = xml_content.upper()
                     if b"<!DOCTYPE" in xml_content or b"<!ENTITY" in xml_content:
                         raise ExtractionError("invalid_file_content")
                     if entry.filename.endswith(".rels") and (
                         b'TARGETMODE="EXTERNAL"' in xml_content
                         or b"TARGETMODE='EXTERNAL'" in xml_content
+                    ):
+                        raise ExtractionError("invalid_file_content")
+                    # Lexical byte checks alone miss UTF-16 XML and whitespace
+                    # around relationship attributes. python-docx's parser
+                    # disables entity resolution and does not fetch network DTDs.
+                    try:
+                        root = parse_xml(original_xml)
+                    except Exception as error:
+                        raise ExtractionError("malformed_document") from error
+                    if root.getroottree().docinfo.doctype or (
+                        entry.filename.endswith(".rels")
+                        and any(
+                            element.get("TargetMode", "").strip().lower() == "external"
+                            for element in root.iter()
+                        )
                     ):
                         raise ExtractionError("invalid_file_content")
     except ExtractionError:

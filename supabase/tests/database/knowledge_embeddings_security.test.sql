@@ -219,6 +219,8 @@ select throws_ok(
     'Completion rejects a stale or incorrect content hash'
 );
 
+reset role;
+-- Inspect raw vectors only as the test owner, never grant browser access.
 select results_eq(
     $$ select count(*)::integer from public.knowledge_chunks
        where source_id = (select source_id from indexing_test_context where key = 'owner-source')
@@ -227,6 +229,7 @@ select results_eq(
     'Rejected completion attempts commit no partial embeddings'
 );
 
+set local role authenticated;
 select lives_ok(
     $$ select * from public.complete_knowledge_indexing(
         (select source_id from indexing_test_context where key = 'owner-source'),
@@ -246,6 +249,7 @@ select results_eq(
     'Successful completion records ready state and safe embedding metadata'
 );
 
+reset role;
 select results_eq(
     $$ select vector_dims(embedding) from public.knowledge_chunks
        where source_id = (select source_id from indexing_test_context where key = 'owner-source') $$,
@@ -253,6 +257,7 @@ select results_eq(
     'The committed chunk vector retains exactly 768 values'
 );
 
+set local role authenticated;
 select throws_ok(
     $$ select * from public.begin_knowledge_indexing(
         (select source_id from indexing_test_context where key = 'owner-source')

@@ -259,6 +259,8 @@ select results_eq(
     'A similarly named object cannot satisfy the exact trusted path check'
 );
 
+reset role;
+-- The deliberately invalid neighbor path is invisible through Storage RLS.
 select ok(
     exists (
         select 1
