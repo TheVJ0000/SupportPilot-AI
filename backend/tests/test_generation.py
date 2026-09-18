@@ -2,7 +2,6 @@ import json
 from types import SimpleNamespace
 
 import pytest
-from google.genai import types
 
 from app.ai.generation.errors import GenerationProviderError
 from app.ai.generation.gemini import GROUNDING_SYSTEM_INSTRUCTION, GeminiGenerationProvider
@@ -90,10 +89,15 @@ async def test_generation_uses_grounded_structured_tool_free_configuration() -> 
     call = client.models.calls[0]
     config = call["config"]
     assert call["model"] == "gemini-3.8-flash"
-    assert config.thinking_config.thinking_level == types.ThinkingLevel.LOW
+    assert config.thinking_config is None
+    assert config.http_options.extra_body["generationConfig"]["thinkingConfig"] == {
+        "thinkingLevel": "LOW"
+    }
     assert config.max_output_tokens == 1200
     assert config.response_mime_type == "application/json"
-    assert config.response_schema.__name__ == "GroundedGenerationDecision"
+    assert config.response_schema is None
+    assert config.response_json_schema["additionalProperties"] is False
+    assert config.response_json_schema["propertyOrdering"] == ["decision", "evidence_ids", "answer"]
     assert config.tools is None
     assert config.tool_config is None
     assert config.system_instruction == GROUNDING_SYSTEM_INSTRUCTION

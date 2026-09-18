@@ -94,12 +94,21 @@ class GeminiGenerationProvider:
 
     @staticmethod
     def _config() -> types.GenerateContentConfig:
+        # Send JSON Schema directly. The SDK's legacy Schema conversion can
+        # serialize unsupported snake_case fields for a strict Pydantic model.
+        # Prefix ordering is also required by the incremental stream parser.
+        schema = GroundedGenerationDecision.model_json_schema()
+        schema["propertyOrdering"] = ["decision", "evidence_ids", "answer"]
         return types.GenerateContentConfig(
             system_instruction=GROUNDING_SYSTEM_INSTRUCTION,
-            thinking_config=types.ThinkingConfig(thinking_level=types.ThinkingLevel.LOW),
+            # The installed SDK also leaves typed ThinkingConfig in snake_case.
+            # Its documented extra_body escape hatch preserves the REST field.
+            http_options=types.HttpOptions(
+                extra_body={"generationConfig": {"thinkingConfig": {"thinkingLevel": "LOW"}}}
+            ),
             max_output_tokens=MAX_OUTPUT_TOKENS,
             response_mime_type="application/json",
-            response_schema=GroundedGenerationDecision,
+            response_json_schema=schema,
         )
 
     async def generate_grounded_answer(

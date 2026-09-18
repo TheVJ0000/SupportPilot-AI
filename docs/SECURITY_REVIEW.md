@@ -339,8 +339,9 @@ or printed. Never overlap it with other Supabase CLI commands. Optional
 --psql selects the existing direct client for diagnostics. Neither resets the
 hosted project. Failure/missing execution is FAIL or UNVERIFIED, never PASS.
 
-Phase 9B deterministic browser journeys are complete (see below); 9C formal
-RAG evaluation is complete but live synthetic validation is blocked (see below).
+Phase 9B deterministic browser journeys and 9C deterministic RAG evaluation are
+complete. Live semantic retrieval passed; live generation/customer validation
+remains incomplete (see below).
 A possible 9D capacity/performance regression remains. Phase 10 must
 recheck genuinely free deployment tiers and validate HTTPS, exact production
 CORS, Auth redirect configuration, platform/proxy logs, secret stores, CSP and
@@ -386,8 +387,8 @@ quota enforcement, hosted Auth/Storage, live generation or notification delivery
 No safe live synthetic authenticated credentials were available; optional
 hosted browser smoke is unverified. No live Gemini/Resend call, quota spend,
 paid service or deployment occurred. Phase 9 overall remains incomplete;
-9C deterministic evaluation is complete while safe synthetic live Gemini
-validation is blocked, and
+9C deterministic evaluation and live semantic retrieval are validated while
+successful live generation/customer validation remains incomplete, and
 possible 9D load testing plus Phase 10 framing/CSP remain separate.
 See [reproduction, exact coverage and artifacts](E2E_TESTING.md).
 
@@ -405,27 +406,52 @@ not proof of Gemini safety/quality. The lexical source miss is retained.
 Explicit live mode checks existing credentials, DB connection and free-tier
 attestation, without fallback. Attestation cannot automatically prove billing;
 an operator must verify exact-model free access before calls. Live data is also
-synthetic-only; current production models/prompts/schema/LOW/tool-free behavior
+synthetic-only; current production models/prompts/strict local schema/LOW/tool-free behavior
 and safe provider retries remain unchanged. Database fixture setup is limited
 to fresh random IDs in a single transaction; real search uses authenticated
 fixture-user claims, not service_role. Rollback/removal verification is required;
 no commits, reset, real-data deletion or new privileged RPC exist. Fixture SQL
-execution itself remains unverified until safe live validation can run.
+execution is now live-validated. The fixture-role restoration fix uses only
+transaction-local postgres for privileged setup; authenticated fixture claims
+still govern search. No migration or application grant/RLS change was required.
 
 Reports contain only sanitized codes, stable fictional slugs, ranks, scores,
 decisions, counts and rough timings—no raw provider/SQL payload, answer/question,
 prompt, vector, key, JWT or unnecessary project ref. Provider/evaluation failures
-stop live calls and cannot become passing insufficiency. Normal pytest creates
-no real SDK client or live request; fresh startup regression confirms production
+stop live calls and cannot become passing insufficiency. Normal pytest makes
+no live request; new SDK transport tests use a dummy key and MockTransport only.
+Fresh startup regression confirms production
 imports no evaluator and exposes no evaluation route. No test bypass, external
 RAG tool, browser secret, production auth/grant change or new dependency was added.
 
-580 offline backend tests pass, including 56 new eval regressions and existing
-provider/stream security tests. Gemini and customer-server secrets are missing;
-live embedding/generation/stream/pgvector/customer/triage validation is blocked,
-with zero actual live calls. No email was sent or paid billing enabled. Hosted
-Supabase was unchanged; no migration 017 or rerun of the unchanged 1,004 pgTAP
-baseline was required. No genuine production RAG defect was established.
+583 offline backend tests pass, including 57 evaluator and two installed-SDK
+wire-format regressions, alongside existing provider/stream security tests.
+Real embeddings and scoped hosted pgvector retrieval passed all 36 cases
+(31 source-eligible), with Beta positive control, zero retrieval isolation leaks
+and verified fixture rollback. Gemini was privately configured and its project's
+free tier/billing-disabled status verified before quota-consuming requests.
+
+An initial Gemini key was accidentally exposed in tool output because the
+redaction assumed an older key format. It was immediately treated as compromised;
+the user revoked it, and the empty key list was verified before a replacement
+was manually saved to ignored .env. The replacement was not printed, committed,
+or copied into a report. No credential values are included here. Future key-page
+inspection returns only allowlisted booleans, never broad DOM with regex redaction.
+
+The original live generation failed HTTP 400 without retry; offline real-SDK
+transport inspection established unsupported snake_case request fields. The
+adapter uses supported JSON Schema and the documented extra_body LOW field path,
+without relaxing strict local validation, citation checks or prompt/tool bounds.
+The corrected live run stopped on HTTP 503 after exactly the existing two
+transient retries, with rollback verified. No successful live generation/stream
+or corresponding quality/security pass is claimed; no further manual retry ran.
+An intervening database preflight failure preceded AI calls, and a subsequent
+independent TLS SELECT 1 passed. All failure reports remain separate and ignored.
+
+SUPABASE_SECRET_KEY remains missing; real customer HTTP/SSE/persistence/history
+and optional triage were not run. No email or paid billing was enabled. Hosted
+schema/grants and real records were unchanged; no migration 017 or rerun of the
+unchanged 1,004 pgTAP baseline was required. Test-only fixtures were rolled back.
 
 Phrase matching is not semantic entailment and can misclassify negations;
 instruction-fragment leakage detection is incomplete against arbitrary

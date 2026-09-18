@@ -364,7 +364,8 @@ rolled back, including pgtap extension creation and migration preflight grants.
 See [the security review](SECURITY_REVIEW.md) for the complete function inventory,
 table/actor/CRUD matrix, exact executed-suite results, dependency snapshot and
 remaining risks. Phase 9B deterministic Playwright integration is complete;
-9C deterministic evaluation is complete, live synthetic validation is blocked,
+9C deterministic evaluation and live semantic retrieval are validated,
+successful live generation/customer validation remains blocked,
 and possible 9D performance testing remains unstarted; deployment-header/framing/CSP
 checks remain Phase 10. Earlier Phase 8 checkpoint results above are historical.
 
@@ -393,7 +394,7 @@ This is not hosted/provider end-to-end validation, database tenant-isolation
 proof, an accessibility certification, capacity evaluation or deployment
 validation. No schema change, migration 017, live Gemini or Resend call occurred;
 the optional hosted authenticated browser smoke remains unverified. Phase 9C
-live validation is blocked; Phase 10 remains unstarted. See [E2E testing](E2E_TESTING.md)
+live generation/customer validation remains incomplete; Phase 10 is unstarted. See [E2E testing](E2E_TESTING.md)
 and [formal RAG evaluation](RAG_EVALUATION.md).
 
 ## Phase 9C evaluation boundary
@@ -430,14 +431,30 @@ the live loop; skipped cases cannot pass as safe refusals. Outputs omit raw
 prose/prompts, vectors, credentials and provider/SQL diagnostics. Customer HTTP
 persistence/triage smoke is separate and not simulated as live by the benchmark.
 
-On September 18, 2026 only deterministic evaluation ran: one retained lexical
-source miss, all offline initial gates passing, 580 backend regressions. Gemini
-and customer-server secrets are absent: live validation remains unverified,
-zero AI calls or hosted changes occurred. No production prompt/model/threshold
-or DB defect was established; no migration 017. Similarity ranges overlap and
-fixture cosine scores do not justify a production cutoff. 9C overall remains
-incomplete; 9D is not justified by currently measured performance evidence and
-neither 9D nor Phase 10 was begun. See [definitions/results/limitations](RAG_EVALUATION.md).
+On September 18, 2026 deterministic gates passed with the retained lexical miss.
+A separate live Gemini-embedding/hosted pgvector retrieval-only run passed
+Hit@8/Recall@8 100%, MRR 0.96774, own-scope Beta control and verified rollback.
+Both live and fixture cosine ranges overlap; no threshold changed. The harness
+now restores transaction-local postgres setup after authenticated workspace
+creation instead of resetting to the ephemeral CLI login. Retrieval stays
+authenticated with fixture claims, never service-role search.
+
+Installed SDK 2.23.0 transport emitted unsupported snake_case legacy Schema and
+ThinkingConfig fields. The generation adapter now supplies strict Pydantic
+JSON Schema through response_json_schema and explicit decision/evidence/answer
+propertyOrdering. LOW thinking uses the documented extra_body REST field path;
+installed-SDK offline HTTP/SSE tests verify the actual wire body and parsing.
+Strict final Pydantic validation, trusted citations, prompts, models, tools,
+bounded retries and limits remain unchanged. No dependency or migration 017.
+
+Original live generation failed HTTP 400; corrected live generation reached
+HTTP 503 on its initial request and two existing retries, then halted remaining
+cases with rollback verified. No answer/stream success or model-quality pass is
+claimed. Gemini is private and the free project/billing-disabled status verified;
+SUPABASE_SECRET_KEY is still missing. Customer HTTP/persistence and optional
+triage are unverified. 583 backend, 203 frontend and 24 browser regressions pass.
+9C/9 overall are incomplete; no capacity result justifies 9D yet, and neither
+9D nor Phase 10 was begun. See [actual results/failures](RAG_EVALUATION.md).
 
 Major business-owned entities will use `workspace_id` so every business's content can be scoped consistently.
 

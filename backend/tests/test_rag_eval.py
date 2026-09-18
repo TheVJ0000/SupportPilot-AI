@@ -428,17 +428,32 @@ def test_live_free_tier_confirmation_required_even_with_key(dataset, monkeypatch
     assert result["status"] == "LIVE EVALUATION UNAVAILABLE"
 
 
-def test_hosted_fixture_uses_real_rpc_authenticated_scope_and_rollback(dataset, monkeypatch):
+@pytest.mark.parametrize("session_role", ["postgres", "ephemeral_cli_login"])
+def test_hosted_fixture_uses_real_rpc_authenticated_scope_and_rollback(
+    dataset, monkeypatch, session_role
+):
     import evals.rag.hosted as hosted
 
     class Connection:
         def __init__(self, *_):
             self.sql = []
             self.closed = False
+            # The existing connection helper SET ROLEs to postgres; its session
+            # login can still be a distinct, less-privileged CLI identity.
+            self.role = "postgres"
 
         def query(self, sql):
             self.sql.append(sql)
+            if "set local role authenticated" in sql:
+                self.role = "authenticated"
+            elif "set local role postgres" in sql:
+                self.role = "postgres"
+            elif sql == "reset role;":
+                self.role = session_role
+            if sql.lstrip().startswith("insert into"):
+                assert self.role == "postgres", "Fixture writes lost the setup role"
             if "create_workspace" in sql:
+                assert self.role == "authenticated"
                 return [[str(identifier("fixture-" + str(len(self.sql))))]]
             if "coalesce" in sql:
                 return [["[]"]]

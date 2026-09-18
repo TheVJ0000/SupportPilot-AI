@@ -1,7 +1,8 @@
 # Phase 9C — formal synthetic RAG evaluation
 
 **September 18, 2026; dataset 1.0.0. Deterministic evaluation complete;
-live provider validation blocked/unverified. Phase 9C overall is not complete.**
+live embeddings/hosted retrieval validated, generation validation incomplete.
+Phase 9C overall is not complete.**
 
 The benchmark separates retrieval, answerability, grounding, citations,
 insufficiency, injection, tenant isolation and context. No LLM judge, new
@@ -160,36 +161,92 @@ They do not justify a production similarity threshold. None changed.
 
 ## Live status and safe implementation
 
-**LIVE EVALUATION UNAVAILABLE.** `GEMINI_API_KEY` is missing; no free-tier/billing
-attestation or existing PG connection environment was provided to this command.
-Customer-server `SUPABASE_SECRET_KEY` is also missing (needed for the separate
-real customer HTTP journey, not for fixture-user authenticated search). Supabase
-URL is configured. No secret values were printed. Live generation cases actually
-run: **0**. Live document/query embeddings, generation, streaming, hosted pgvector,
-customer persistence/history and optional triage smoke are **unverified**, not
-passed. No live provider failure occurred because no API request was made.
-No email was sent. No quota, billing, account or hosted data/schema changed.
+The replacement `GEMINI_API_KEY` is privately configured. Google AI Studio shows
+the existing project on **Free tier**, with **Set up billing** (no linked billing
+account). The exact Standard generation and text-embedding models were checked
+against [Google pricing](https://ai.google.dev/gemini-api/docs/pricing) and
+[billing documentation](https://ai.google.dev/gemini-api/docs/billing) on
+September 18, 2026. No paid billing or fallback model was enabled. This is an
+operator verification, not automatic billing detection by the runner.
 
-Live mode retains `google-genai`, generation `gemini-3.8-flash` with LOW thinking,
-existing structured schema, embeddings `gemini-embedding-2`, dimension 768, and
-the exact production prompt/parser/adapters. No search, URL context, code, file
-search, external tool or LLM judge is enabled. It validates finite document/query
-vectors and uses actual pgvector cosine RPC search with fixture JWT claims.
-It creates two scopes with fresh random IDs in one transaction, rolls back and
-verifies removal. One extra Beta query is a positive control proving its distinct
-fact is searchable in Beta before testing absence from Alpha. Existing test-only
-libpq/TLS tooling is reused. The hosted
-fixture SQL has offline structural tests; **its execution is not live-validated**.
-Failures are sanitized/classified and cleanup errors cannot pass.
+Existing authenticated Supabase CLI tooling supplies ephemeral PG credentials
+in memory. TLS remains `verify-full`, using the official public Supabase CA;
+neither credentials nor TLS settings were added to tracked files. An initial
+fixture setup failed with SQLSTATE 42501: `RESET ROLE` restored the ephemeral CLI
+login instead of the connection helper's setup role. A regression reproduces
+that behavior. The harness now explicitly restores `SET LOCAL ROLE postgres`
+only within its rollback transaction. Real retrieval still uses authenticated
+fixture-user claims; no application grant/RLS/schema was weakened.
 
-[Google billing](https://ai.google.dev/gemini-api/docs/billing) and
-[pricing](https://ai.google.dev/gemini-api/docs/pricing) were checked September 18,
-2026. Free access is model/project-dependent; these documents alone do not prove
-this account's eligibility or exact-model availability. Before using
-`--confirm-free-tier`, verify both exact models are currently free in the existing
-project and no billing account is attached. The flag attests that check; it
-cannot determine billing automatically. If unavailable/paid, stop—do not change
-models or enable paid billing to get a passing report.
+The subsequent **retrieval-only live run passed** all 36 queries (31 with source
+expectations), with real `gemini-embedding-2` vectors and hosted pgvector RPC:
+
+| Measurement | Live retrieval-only result |
+| --- | ---: |
+| Hit@1 | 29/31 = 93.55% |
+| Hit@3; Hit@8 | 100%; 100% |
+| Source Recall@8 | 100% |
+| MRR@8 | 0.96774 |
+| Document chunks embedded; vector dimension | 17; 768 finite values |
+| Beta searchable-in-own-scope positive control | Passed |
+| Cross-workspace retrieval leaks | 0 |
+| Provider / evaluator errors | 0 / 0 |
+| Fixture rollback/removal verification | Passed |
+| Generation / streaming invocations | 0 / 0 (intentionally omitted) |
+
+Per-case embedding + retrieval duration was 1,267.33–2,159.78 ms, median
+1,428.285 ms. These small sequential observations are not capacity guarantees.
+Live cosine distributions (count; min / median / mean / max):
+
+| Group | Count | Minimum | Median | Mean | Maximum |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Answerable expected-source chunks | 70 | 0.57285 | 0.71373 | 0.71820 | 0.86019 |
+| Answerable distractor chunks | 162 | 0.51470 | 0.60061 | 0.61110 | 0.81656 |
+| Insufficient-question retrieved chunks | 56 | 0.50988 | 0.56221 | 0.56361 | 0.69052 |
+
+Relevant/distractor/insufficient ranges overlap: the production threshold remains
+unchanged. Retrieval-only generation/grounding metrics are null, not passes.
+
+The first full live run stopped at its **first generation invocation with HTTP
+400 (`generation_failed`)**, with no retry for this non-transient failure.
+Remaining 35 cases were marked `not_run_after_failure`; no stream completed.
+Embeddings, the Beta control and fixture rollback passed. Its intended
+`generation_cases = 16` does not mean 16 actual calls. Skipped-case zeros in that
+failed report must not be advertised as model-quality measurements. The prior
+successful retrieval-only snapshot is kept separate from this failed run.
+
+Offline inspection of the installed `google-genai` 2.23.0 transport established
+unsupported snake_case fields in legacy `responseSchema` and `thinkingConfig`.
+The adapter now sends the same strict Pydantic-derived schema as
+`responseJsonSchema`, with `propertyOrdering` decision → evidence IDs → answer,
+and sends the unchanged LOW setting through the SDK's documented `extra_body`
+mechanism. [Google structured output](https://ai.google.dev/gemini-api/docs/generate-content/structured-output),
+[REST fields](https://ai.google.dev/api/generate-content) and
+[SDK documentation](https://github.com/googleapis/python-genai#extra-request-body)
+support these wire formats. Local transport tests exercise the real installed
+SDK for non-streaming and SSE responses, with no network. This is a general
+serialization fix, not benchmark prompt/label tuning. The original HTTP 400
+payload was intentionally suppressed; its precise provider explanation is not
+claimed. A post-fix attempt failed its database connection preflight before AI
+calls; a separate subsequent TLS `SELECT 1` succeeded. Earlier reports are kept
+as separate ignored artifacts, not overwritten to conceal failures.
+
+With the TLS prerequisite subsequently passing, one bounded post-fix full
+validation reached generation. Its first primary invocation received **HTTP 503
+on all three physical attempts** (initial + the existing two transient retries),
+classified `generation_provider_unavailable`. The loop stopped: 35 cases were
+not run, no answer or stream completed, both gates failed, and fixture rollback
+was verified. Document/query embeddings and the Beta control succeeded again.
+No further manual provider retry was made. This demonstrates a different live
+failure from the original HTTP 400, **not successful generation or proof that
+every request-format problem is resolved**. Generation quality, citations under
+live output, injection resistance, context and successful generation latency
+remain unmeasured. The provider error is not a passing insufficient response.
+
+`SUPABASE_SECRET_KEY` is still absent. Real customer HTTP/SSE, persisted history
+and optional triage smoke remain unverified, not simulated as passes. No email
+was sent. No hosted fixture was committed, real data deleted, migration applied,
+or billing enabled. See the security review for the revoked initial-key incident.
 
 ## Regression validation and changes
 
@@ -204,30 +261,29 @@ mocked at transport for embedding/generation 401/403/429/503, invalid dimensions
 NaN/Inf, bad structured decisions/E99 and truncated actual stream parsing.
 Poisoned answers make metrics/gates fail; errors are not scored as passes.
 
-No genuine production RAG defect was established. Only new evaluator defects
-were corrected during development (safe boolean insufficiency scoring and
-fail-closed missing results). Production application code, SQL, prompts, models,
-SDK retries and thresholds remain unchanged. Pytest's local Python path is
+The live fixture-role defect and production SDK request-serialization defect
+were corrected with regressions. Earlier evaluator development also fixed safe
+boolean insufficiency scoring and fail-closed missing results. Application SQL,
+prompts, models, strict local validation, citation reconstruction, retry policy
+and thresholds remain unchanged. Pytest's local Python path is
 explicit so the uninstalled, test-only eval package is importable without
 including it in production distribution. Migration 017 was **not required**.
 The 1,004 Phase 9A hosted pgTAP assertions were not rerun unnecessarily.
 
-Validation record: **580 backend tests (56 new evaluator regressions)**; frontend
+Validation record: **583 backend tests (57 evaluator regressions and two new
+installed-SDK transport regressions)**; frontend
 Vitest passes **203 tests**, ESLint and TypeScript/Vite build pass. The existing
-573.96 kB bundle warning remains non-blocking. **24 Chromium tests pass (1.2m)**
-with zero test retries. The first sandboxed run completed every case but stalled
-in Windows child-process cleanup; only its verified test processes were stopped.
-The same existing command rerun with child-process cleanup permissions exited 0.
-A non-fatal Windows client-disconnect callback (`WinError 10054`) appeared in
-test-server output; browser checks still passed. Ordinary application servers
-were untouched; no application/config change was made to hide the warning.
+573.96 kB bundle warning remains non-blocking. **24 Chromium tests pass (1.4m)**
+with zero test retries; lint/format/build pass. Local backend startup was refreshed
+to read the replacement key; no unrelated process or user work was discarded.
 
 ## Limitations and phase decision
 
 Offline scripted answers are authored fixtures, not predictions; their perfect
 fact/decision/security numbers cannot demonstrate model robustness. Lexical
-ranking is not Gemini/pgvector, and hard paraphrases/semantic relevance are not
-validated. Thirty-six cases are a small fixed benchmark; live provider outputs
+ranking is not Gemini/pgvector. Live semantic retrieval now has a separate small
+synthetic measurement; it does not establish broad robustness. Thirty-six cases
+are a small fixed benchmark; live provider outputs
 can vary. Phrase checks can miss paraphrases or over-flag legitimate negations
 (for example, a forbidden `tumble dry` mention in “do not tumble dry”, or a denial
 of `lifetime`). Review such failures transparently; do not claim semantic
@@ -237,7 +293,7 @@ does not prove a claim is entailed; facts/source coverage supplement it.
 
 Customer HTTP/SSE persistence/authenticated hosted browser behavior, real upload
 extraction, Storage byte deletion, provider latency/concurrency and real security
-under hostile model output remain outside this offline benchmark. Existing
+under hostile model output remain unverified by these completed runs. Existing
 provider error/security regressions test implementation safeguards, not live AI.
 
 **9D not currently justified by measured evidence:** no resource, stream-load or
@@ -248,8 +304,10 @@ or multi-stream behavior. Complete the safe live 9C baseline first, then reasses
 9D if measurements or a concrete expected-load requirement show a need. No 9D
 or Phase 10 work was started.
 
-Before Phase 10, complete the missing safe free-tier live Gemini/hosted retrieval
-validation and real synthetic customer journey, review failures rather than
+Before Phase 10, complete successful live Gemini generation/streaming and the
+real synthetic customer journey (currently missing the server-only Supabase
+secret). Hosted retrieval is validated separately, not the whole live pipeline.
+Review failures rather than
 overfit prompts, and reassess load need. Phase 10 must separately verify current
 free hosting, deployment secrets, CORS/Auth redirects, framing/CSP, logs and
 public-demo bot/shared-quota/aggregate-budget risks. No deployment readiness or

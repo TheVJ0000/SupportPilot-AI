@@ -29,7 +29,8 @@ results remain visible. The first dataset intentionally retains a retrieval miss
 .\.venv\Scripts\python.exe -m evals.rag.runner --mode live --output evals/rag/results/live.json
 ```
 
-This currently returns `LIVE EVALUATION UNAVAILABLE` (exit 2). It never falls
+Without required private configuration/attestation this returns
+`LIVE EVALUATION UNAVAILABLE` (exit 2). It never falls
 back to fixtures. Before any real call, an operator must privately supply the
 existing `GEMINI_API_KEY` through the backend settings, and an existing safe
 linked Free-development database connection through `PGHOST`, `PGUSER`,
@@ -41,9 +42,9 @@ Do not enable paid billing or create infrastructure to satisfy this benchmark.
 After independently verifying **both exact models** are available free for that
 project and billing is disabled, append `--confirm-free-tier`. That flag is an
 operator attestation, not automatic billing detection. Without it no call runs.
-Models stay `gemini-3.8-flash` (LOW, existing structured schema, tool-free) and
+Models stay `gemini-3.8-flash` (LOW, strict structured JSON schema, tool-free) and
 `gemini-embedding-2` (768 finite dimensions). Model availability is not established
-by this offline work. Fail closed if either model is unavailable or requires payment.
+by offline work alone. Fail closed if either model is unavailable or requires payment.
 
 Live mode embeds 17 synthetic chunks, then seeds two fresh scopes in one SQL
 transaction. Every query uses authenticated fixture-user claims and the actual

@@ -191,19 +191,20 @@ whitespace PASS. No SQL change or migration 017; Phase 9A hosted DB checks were
 not rerun. No live Gemini/Resend or hosted authenticated browser smoke ran. See
 [the reproducible E2E guide and limitations](E2E_TESTING.md).
 
-**Phase 9C — deterministic evaluation complete; live provider validation
-blocked/unverified (September 18, 2026).** Version 1.0.0 includes 36 synthetic
-cases: 12 answerable, six multi-source, six insufficient, five injection, four
-context and three adversarial. Offline lexical ranking + scripted SDK contract
-checks run the actual context/retrieval/provider/parser/citation implementation,
-not live Gemini or pgvector. Hit@8 100%, Recall@8 98.39%; one absent-dimensions
-retrieval-source miss remains visible. Separate metrics/gates and 56 evaluator
-regressions are reproducible; backend total is 580, with 203 frontend and 24
-Chromium tests passing. No production code/model/
-prompt/threshold/schema change, migration 017 or paid dependency was needed.
-Gemini and customer-server secrets are missing; the live command reports
-unavailable, never falls back. Zero live embedding/generation/stream/hosted
-search/customer/triage journeys ran, and no email was sent. See
+**Phase 9C — deterministic evaluation complete; live embeddings/hosted retrieval
+validated, generation incomplete (September 18, 2026).** Version 1.0.0 retains
+36 synthetic cases and independent metric gates. Offline lexical Hit@8 100%,
+Recall@8 98.39% and its source miss remain labelled fixture measurements.
+Separate live semantic retrieval passed Hit@1 93.55%, Hit@8/Recall@8 100%,
+MRR 0.96774, Beta isolation control and rollback. Fixture setup role restoration
+and installed-SDK request serialization were fixed with regressions. Original
+generation failed HTTP 400; corrected generation failed HTTP 503 after only
+the existing bounded retries, then stopped. No successful live answer/stream,
+customer HTTP/persistence journey or triage smoke is claimed. Gemini is private,
+free tier/billing disabled verified; the server-only Supabase secret is missing.
+583 backend, 203 frontend and 24 browser tests pass; lint/format/build pass.
+No prompt/model/threshold/DB schema/grant change, migration 017, new dependency,
+email or paid billing. Phase 9C is not complete. See
 [the formal evaluation report](RAG_EVALUATION.md).
 
 **9D not currently justified by measured evidence.** No load/resource failure
@@ -212,9 +213,9 @@ prove concurrent-stream capacity. Complete the blocked live 9C baseline first,
 then reassess if measurements or a concrete target-load requirement justify it.
 9D was not started; Phase 10 remains unstarted.
 
-**Phase 9 is not complete.** Safely configured
-customer-server/Gemini credentials and synthetic authenticated access are needed
-before live journeys (email configuration only for notification delivery).
+**Phase 9 is not complete.** Successful live generation/streaming and private
+customer-server configuration are needed before the real synthetic customer
+journey (email configuration only for optional notification delivery).
 Storage API HTTP byte-deletion is not claimed by SQL tests. Fixed-window bursts,
 shared-widget availability, aggregate AI-budget/bot protection, XSS/key compromise
 and production capacity remain limitations. Deployment/framing/CSP, exact hosted

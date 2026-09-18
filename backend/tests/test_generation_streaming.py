@@ -1,7 +1,6 @@
 from types import SimpleNamespace
 
 import pytest
-from google.genai import types
 
 from app.ai.generation.errors import GenerationProviderError
 from app.ai.generation.gemini import GeminiGenerationProvider
@@ -98,9 +97,12 @@ async def test_stream_uses_ordered_structured_tool_free_low_thinking_configurati
     call = client.models.calls[0]
     config = call["config"]
     assert call["model"] == "gemini-3.8-flash"
-    assert config.thinking_config.thinking_level == types.ThinkingLevel.LOW
+    assert config.thinking_config is None
+    assert config.http_options.extra_body["generationConfig"]["thinkingConfig"] == {
+        "thinkingLevel": "LOW"
+    }
     assert config.response_mime_type == "application/json"
-    assert list(config.response_schema.model_json_schema()["properties"]) == [
+    assert config.response_json_schema["propertyOrdering"] == [
         "decision",
         "evidence_ids",
         "answer",

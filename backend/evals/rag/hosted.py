@@ -69,7 +69,10 @@ class HostedGateway:
                 f"select id from public.create_workspace('Northstar Evaluation {scope}');"
             )[0][0]
             self.workspaces[scope] = workspace
-            self.connection.query("reset role;")
+            # RESET ROLE restores the ephemeral CLI session login, not the
+            # postgres setup role selected by the existing connection helper.
+            # Keep privileged fixture writes local to this rollback transaction.
+            self.connection.query("set local role postgres;")
         for source in self.dataset.sources:
             text = "\n\n".join(source.chunks)
             self.connection.query(f"""insert into public.knowledge_sources
