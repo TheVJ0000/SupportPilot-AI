@@ -1,0 +1,30 @@
+import { test, expect, API, BETA, CONV } from './fixtures'
+test.describe('transcript switch', () => {
+test.use({ expectedStatuses: [404] })
+test('switch removes Alpha transcript and shows Beta workspace', async ({ page, login }) => {
+  await login()
+  await page.goto(`/app/conversations/${CONV}`)
+  await expect(page.getByText('Alpha shipping question', { exact: true })).toBeVisible()
+  await page.getByLabel('Active workspace').selectOption(BETA)
+  await expect(page.getByText('Alpha shipping question', { exact: true })).toHaveCount(0)
+  await page.getByRole('navigation', { name: 'Application' }).getByRole('link', { name: 'Conversations' }).click()
+  await expect(page.getByText('Beta Support · Support operations')).toBeVisible()
+  await expect(page.getByText('Alpha shipping question', { exact: true })).toHaveCount(0)
+  await expect(page.getByRole('link', { name: 'View conversation', exact: true })).toHaveCount(0)
+})
+})
+test.describe('late response', () => {
+  test.use({ scenario: 'late' })
+  test('late Alpha dashboard cannot overwrite Beta', async ({ page, login, request, release }) => {
+    await login()
+    await expect.poll(async () => (await (await request.get(`${API}/_e2e/state`)).json()).delay_started).toBe(true)
+    await page.getByLabel('Active workspace').selectOption(BETA)
+    const card = page.getByRole('article').filter({ has: page.getByRole('heading', { name: 'Total conversations', exact: true }) })
+    await expect(card).toContainText('9')
+    await release(2)
+    await expect.poll(async () => (await (await request.get(`${API}/_e2e/state`)).json()).delay_finished).toBe(true)
+    await expect(page.getByText('Beta Support · Support operations')).toBeVisible()
+    await expect(card).toContainText('9')
+    await expect(page.getByText('Alpha Support · Support operations')).toHaveCount(0)
+  })
+})

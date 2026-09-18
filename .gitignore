@@ -42,6 +42,8 @@ build/
 coverage/
 playwright-report/
 test-results/
+blob-report/
+.e2e-state/
 
 # Environment / secrets
 .env

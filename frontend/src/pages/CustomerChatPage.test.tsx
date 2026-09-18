@@ -251,6 +251,26 @@ describe('hosted customer chat page', () => {
     expect(mocks.createCustomerSession).not.toHaveBeenCalled()
   })
 
+  it.each(['hosted', 'embedded'] as const)('explains restored closed %s conversation without hiding history or allowing sends', async mode => {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(storedSession()))
+    mocks.getCustomerConversation.mockResolvedValue(conversation([{
+      id: ASSISTANT_MESSAGE_ID, role: 'assistant', content: 'Synthetic saved support answer.',
+      answer_status: 'answered', created_at: '2026-09-15T12:00:00Z', citations: [], feedback: null,
+    }], 'closed'))
+    renderChat(mode)
+    expect(await screen.findByText('Synthetic saved support answer.')).toBeVisible()
+    expect(screen.getByRole('status')).toHaveTextContent('This conversation is closed.')
+    expect(screen.getByText('You can still read the history, but new messages are unavailable.')).toBeVisible()
+    const composer = screen.getByRole('textbox', { name: 'Message' })
+    expect(composer).toBeDisabled()
+    expect(composer).toHaveAttribute('placeholder', 'This conversation is not accepting new messages.')
+    expect(screen.getByRole('button', { name: 'Send' })).toBeDisabled()
+    expect(screen.queryByRole('button', { name: 'Request a human' })).toBeNull()
+    fireEvent.keyDown(composer, { key: 'Enter' })
+    expect(mocks.submitCustomerTurn).not.toHaveBeenCalled()
+    expect(mocks.createCustomerSession).not.toHaveBeenCalled()
+  })
+
   it('replaces an expired stored session without requesting its history', async () => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(storedSession('2020-01-01T00:00:00Z')))
     renderChat()

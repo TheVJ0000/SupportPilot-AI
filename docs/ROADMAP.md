@@ -177,8 +177,22 @@ Ruff lint/format, frontend lint/build and Git whitespace checks PASS. No new
 feature, paid service, dependency or provider was introduced. See
 [the complete review, suite inventory and residual risks](SECURITY_REVIEW.md).
 
-**Phase 9 is not complete.** Phase 9B Playwright end-to-end journeys and Phase 9C
-formal RAG evaluation plus synthetic live Gemini validation remain unstarted;
+**Phase 9B — primary browser integration complete (September 18, 2026).**
+All 24 Chromium tests pass across nine specs: roles and route guards, workspace
+switch/late-response fencing, KB validation/FAQ extraction, conversation and
+escalation lifecycles, safe 409 refresh, widget snippet/availability, real SSE,
+same-ID retries, citations, feedback, confirmed handoff, cooldown, closed state,
+independent-origin embedding/privacy/session restoration and mobile usability.
+External auth/database/AI boundaries are synthetic in a separate test-only
+FastAPI instance; own frontend/FastAPI requests are real. Production auth has no
+test bypass. Closed-chat explanation was fixed with lower-level regressions.
+Final checks: 524 backend, 203 frontend and 24 browser tests; lint/format/build/
+whitespace PASS. No SQL change or migration 017; Phase 9A hosted DB checks were
+not rerun. No live Gemini/Resend or hosted authenticated browser smoke ran. See
+[the reproducible E2E guide and limitations](E2E_TESTING.md).
+
+**Phase 9 is not complete.** Phase 9C formal RAG evaluation plus synthetic live
+Gemini validation remains unstarted;
 possible Phase 9D load/performance regression remains separate. Safely configured
 customer-server/Gemini credentials and synthetic authenticated access are needed
 before live journeys (email configuration only for notification delivery).

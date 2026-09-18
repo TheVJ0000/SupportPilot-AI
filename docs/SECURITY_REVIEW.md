@@ -339,10 +339,53 @@ or printed. Never overlap it with other Supabase CLI commands. Optional
 --psql selects the existing direct client for diagnostics. Neither resets the
 hosted project. Failure/missing execution is FAIL or UNVERIFIED, never PASS.
 
-Phase 9B browser journeys and 9C formal RAG/live synthetic validation are not
-started. A possible 9D capacity/performance regression remains. Phase 10 must
+Phase 9B deterministic browser journeys are complete (see below); 9C formal
+RAG/live synthetic validation is not started. A possible 9D capacity/performance
+regression remains. Phase 10 must
 recheck genuinely free deployment tiers and validate HTTPS, exact production
 CORS, Auth redirect configuration, platform/proxy logs, secret stores, CSP and
 frame-ancestors compatible with /embed (never blanket DENY), COOP/COEP/cookie
 effects, frontend asset/security headers, cache behavior and widget operation
 from an independent origin. The existing frontend bundle-size warning remains.
+
+## Phase 9B browser security regression (September 18, 2026)
+
+24 Chromium tests PASS, separately from 524 backend and 203 frontend tests;
+Ruff lint/format, ESLint, TypeScript/Vite build and whitespace checks PASS.
+Version 1.63.0 is development-only. Generated reports/screenshots/traces and
+browser binaries are not committed. Production authentication, RLS, RPCs,
+service-key usage and CORS are unchanged; no migration 017 was necessary. Prior
+Phase 9A hosted pgTAP/concurrency results above are not counted as reruns.
+
+A separate test-only FastAPI instance includes real routes/models/middleware,
+with synthetic external dependencies and fresh random tokens. No production
+startup path imports it. Backend regressions check fresh app startup's verifier,
+absence of overrides/E2E OpenAPI routes/static fixture constants/bypass controls,
+and that importing the harness leaves the production instance unchanged.
+The test verifier rejects missing, random and prior-reset tokens. The runner
+binds loopback only; unauthenticated reset controls must never be deployed.
+Browser interception is limited to the synthetic external Supabase origin,
+never all own `/api` calls. No secret-key VITE variable, wildcard CORS,
+real credential or personal data was added.
+
+Browser checks cover member UX denial, cross-workspace transcript removal,
+late-response fencing, safe stale-conflict refresh, sanitized public error copy,
+real SSE completion/failed partial removal, same-ID retries, feedback rejection,
+confirmed handoff, no automatic cooldown retry and closed/read-only state.
+The genuine closed-state explanation gap was fixed in the shared chat page,
+with hosted and embedded component regressions; no authorization changed.
+Independent-origin widget tests observe empty host storage, no host message
+events/customer transcript/credential exposure, one isolated launcher, sandboxed
+iframe, preserved session and safe unavailable state. They do not bypass the
+browser's same-origin protections. Every browser test rejects page errors and
+unexpected console errors, allowing only explicitly expected local API HTTP
+failure noise in individual negative scenarios.
+
+These tests control database boundaries: they do not re-prove live RLS, real
+quota enforcement, hosted Auth/Storage, live generation or notification delivery.
+No safe live synthetic authenticated credentials were available; optional
+hosted browser smoke is unverified. No live Gemini/Resend call, quota spend,
+paid service or deployment occurred. Phase 9 overall remains incomplete;
+9C formal RAG evaluation/safe synthetic live Gemini validation is next, and
+possible 9D load testing plus Phase 10 framing/CSP remain separate.
+See [reproduction, exact coverage and artifacts](E2E_TESTING.md).

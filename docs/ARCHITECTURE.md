@@ -363,9 +363,37 @@ rolled back, including pgtap extension creation and migration preflight grants.
 
 See [the security review](SECURITY_REVIEW.md) for the complete function inventory,
 table/actor/CRUD matrix, exact executed-suite results, dependency snapshot and
-remaining risks. Phase 9B Playwright, 9C formal RAG/live synthetic validation and
-possible 9D performance testing remain separate; deployment-header/framing/CSP
+remaining risks. Phase 9B deterministic Playwright integration is complete;
+9C formal RAG/live synthetic validation and possible 9D performance testing
+remain separate and unstarted; deployment-header/framing/CSP
 checks remain Phase 10. Earlier Phase 8 checkpoint results above are historical.
+
+### Phase 9B browser test boundary
+
+The Chromium runner orchestrates loopback Vite (5175), a separate FastAPI test
+instance (8001), and the existing independent widget host (4175), without reusing
+ordinary development servers. One worker and per-test reset/random bearer
+tokens isolate synthetic Alpha/Beta state. The browser replaces only the
+external Supabase boundary; own HTTP API clients and real FastAPI routes,
+models/middleware/services remain in use. The real admin gateway uses a
+test-only RPC transport; customer persistence/retrieval and AI use bounded
+in-memory adapters. Explicit gates release real SSE deltas and delayed requests.
+FAQ extraction reaches pending/awaiting indexing with no live embeddings.
+
+The test app copies router/middleware definitions, never mutates production
+overrides, starts no lifespan worker, and exposes reset/release controls only in
+test tooling. Executable backend guards assert normal startup has no harness
+import, E2E route, static fixture credential or auth bypass. No production
+JWT/CORS/SQL/provider behavior was relaxed. All 24 Chromium journeys pass,
+including semantic control and 390×844 viewport checks; separately 524 backend
+and 203 frontend tests pass. Closed customer chats now explicitly explain their
+read-only state in both shared presentations, with component regressions.
+
+This is not hosted/provider end-to-end validation, database tenant-isolation
+proof, an accessibility certification, capacity evaluation or deployment
+validation. No schema change, migration 017, live Gemini or Resend call occurred;
+the optional hosted authenticated browser smoke remains unverified. Phase 9C
+and Phase 10 remain unstarted. See [E2E testing](E2E_TESTING.md).
 
 Major business-owned entities will use `workspace_id` so every business's content can be scoped consistently.
 

@@ -1,0 +1,36 @@
+import { test, expect, PUBLIC, HOST, ORIGIN, send, finish } from './fixtures'
+test.use({ viewport: { width: 390, height: 844 } })
+
+test('mobile dashboard navigation and workspace selector remain usable', async ({ page, login }) => {
+  await login()
+  await expect(page.getByRole('heading', { name: 'Dashboard', exact: true })).toBeVisible()
+  await expect(page.getByLabel('Active workspace')).toBeVisible()
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+  await page.getByRole('navigation', { name: 'Application' }).getByRole('link', { name: 'Conversations', exact: true }).click()
+  await expect(page.getByRole('heading', { name: 'Conversations', exact: true })).toBeVisible()
+})
+test('mobile hosted chat streams without horizontal overflow', async ({ page, release }) => {
+  await page.goto(`/chat/${PUBLIC}`)
+  await send(page)
+  await finish(page, release)
+  await expect(page.getByRole('textbox', { name: 'Message', exact: true })).toBeVisible()
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+})
+test('mobile external widget panel fits viewport and composer remains usable', async ({ page, release }) => {
+  await page.goto(`${HOST}/?publicId=${PUBLIC}&supportOrigin=${encodeURIComponent(ORIGIN)}`)
+  await page.getByRole('button', { name: 'Support', exact: true }).click()
+  const panel = page.getByRole('region', { name: 'Support chat panel' })
+  const box = await panel.boundingBox()
+  expect(box).not.toBeNull()
+  expect(box!.x).toBeGreaterThanOrEqual(0)
+  expect(box!.x + box!.width).toBeLessThanOrEqual(390)
+  expect(box!.y).toBeGreaterThanOrEqual(0)
+  expect(box!.y + box!.height).toBeLessThanOrEqual(844)
+  const chat = page.frameLocator('iframe[title="Support chat"]')
+  await send(chat)
+  await finish(chat, release)
+  const frame = page.frames().find(item => item.url().startsWith(`${ORIGIN}/embed/`))!
+  expect(await frame.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+  await page.getByRole('button', { name: 'Close support chat' }).click()
+  await expect(panel).toBeHidden()
+})

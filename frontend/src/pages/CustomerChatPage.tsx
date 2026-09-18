@@ -479,6 +479,13 @@ export function CustomerChatPage({ mode = 'hosted' }: { mode?: 'hosted' | 'embed
           </div>
         )}
 
+        {conversationStatus === 'closed' && (
+          <div className="border-b border-slate-200 bg-slate-100 px-5 py-4 text-sm text-slate-700 sm:px-7" role="status">
+            <p className="font-bold">This conversation is closed.</p>
+            <p className="mt-1">You can still read the history, but new messages are unavailable.</p>
+          </div>
+        )}
+
         <div
           aria-label="Conversation messages"
           aria-live="polite"
@@ -545,7 +552,9 @@ export function CustomerChatPage({ mode = 'hosted' }: { mode?: 'hosted' | 'embed
               placeholder={
                 conversationStatus === 'human_requested'
                   ? 'AI messaging is paused'
-                  : 'Ask a support question…'
+                  : conversationStatus === 'closed'
+                    ? 'This conversation is not accepting new messages.'
+                    : 'Ask a support question…'
               }
               ref={composerRef}
               rows={1}
