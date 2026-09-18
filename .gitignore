@@ -44,6 +44,7 @@ playwright-report/
 test-results/
 blob-report/
 .e2e-state/
+backend/evals/rag/results/
 
 # Environment / secrets
 .env

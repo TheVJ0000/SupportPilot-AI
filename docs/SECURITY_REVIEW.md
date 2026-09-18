@@ -340,8 +340,8 @@ or printed. Never overlap it with other Supabase CLI commands. Optional
 hosted project. Failure/missing execution is FAIL or UNVERIFIED, never PASS.
 
 Phase 9B deterministic browser journeys are complete (see below); 9C formal
-RAG/live synthetic validation is not started. A possible 9D capacity/performance
-regression remains. Phase 10 must
+RAG evaluation is complete but live synthetic validation is blocked (see below).
+A possible 9D capacity/performance regression remains. Phase 10 must
 recheck genuinely free deployment tiers and validate HTTPS, exact production
 CORS, Auth redirect configuration, platform/proxy logs, secret stores, CSP and
 frame-ancestors compatible with /embed (never blanket DENY), COOP/COEP/cookie
@@ -386,6 +386,51 @@ quota enforcement, hosted Auth/Storage, live generation or notification delivery
 No safe live synthetic authenticated credentials were available; optional
 hosted browser smoke is unverified. No live Gemini/Resend call, quota spend,
 paid service or deployment occurred. Phase 9 overall remains incomplete;
-9C formal RAG evaluation/safe synthetic live Gemini validation is next, and
+9C deterministic evaluation is complete while safe synthetic live Gemini
+validation is blocked, and
 possible 9D load testing plus Phase 10 framing/CSP remain separate.
 See [reproduction, exact coverage and artifacts](E2E_TESTING.md).
+
+## Phase 9C evaluation security review (September 18, 2026)
+
+Version 1.0.0 contains only fictional policies/questions/history/attack strings;
+no personal/customer data, credentials or live responses were committed.
+Thirty-six cases separately check source coverage, answerability, required and
+forbidden facts, full trusted citation metadata, exact safe insufficiency,
+prompt/citation attacks, foreign workspace leakage and bounded actual context.
+Poisoned-output regressions make gates fail. Offline ranking does not consult
+expected labels; scripted SDK responses are clearly labelled contract fixtures,
+not proof of Gemini safety/quality. The lexical source miss is retained.
+
+Explicit live mode checks existing credentials, DB connection and free-tier
+attestation, without fallback. Attestation cannot automatically prove billing;
+an operator must verify exact-model free access before calls. Live data is also
+synthetic-only; current production models/prompts/schema/LOW/tool-free behavior
+and safe provider retries remain unchanged. Database fixture setup is limited
+to fresh random IDs in a single transaction; real search uses authenticated
+fixture-user claims, not service_role. Rollback/removal verification is required;
+no commits, reset, real-data deletion or new privileged RPC exist. Fixture SQL
+execution itself remains unverified until safe live validation can run.
+
+Reports contain only sanitized codes, stable fictional slugs, ranks, scores,
+decisions, counts and rough timings—no raw provider/SQL payload, answer/question,
+prompt, vector, key, JWT or unnecessary project ref. Provider/evaluation failures
+stop live calls and cannot become passing insufficiency. Normal pytest creates
+no real SDK client or live request; fresh startup regression confirms production
+imports no evaluator and exposes no evaluation route. No test bypass, external
+RAG tool, browser secret, production auth/grant change or new dependency was added.
+
+580 offline backend tests pass, including 56 new eval regressions and existing
+provider/stream security tests. Gemini and customer-server secrets are missing;
+live embedding/generation/stream/pgvector/customer/triage validation is blocked,
+with zero actual live calls. No email was sent or paid billing enabled. Hosted
+Supabase was unchanged; no migration 017 or rerun of the unchanged 1,004 pgTAP
+baseline was required. No genuine production RAG defect was established.
+
+Phrase matching is not semantic entailment and can misclassify negations;
+instruction-fragment leakage detection is incomplete against arbitrary
+paraphrases. Authored offline answers cannot prove live injection resistance.
+Capacity/concurrent-stream behavior is unmeasured; no observed performance
+failure currently justifies 9D. Reassess after safe live 9C; 9D/10 were not started.
+9C overall and Phase 9 overall remain incomplete. See
+[the formal report and exact remaining blockers](RAG_EVALUATION.md).

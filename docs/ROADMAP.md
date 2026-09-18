@@ -191,9 +191,28 @@ whitespace PASS. No SQL change or migration 017; Phase 9A hosted DB checks were
 not rerun. No live Gemini/Resend or hosted authenticated browser smoke ran. See
 [the reproducible E2E guide and limitations](E2E_TESTING.md).
 
-**Phase 9 is not complete.** Phase 9C formal RAG evaluation plus synthetic live
-Gemini validation remains unstarted;
-possible Phase 9D load/performance regression remains separate. Safely configured
+**Phase 9C — deterministic evaluation complete; live provider validation
+blocked/unverified (September 18, 2026).** Version 1.0.0 includes 36 synthetic
+cases: 12 answerable, six multi-source, six insufficient, five injection, four
+context and three adversarial. Offline lexical ranking + scripted SDK contract
+checks run the actual context/retrieval/provider/parser/citation implementation,
+not live Gemini or pgvector. Hit@8 100%, Recall@8 98.39%; one absent-dimensions
+retrieval-source miss remains visible. Separate metrics/gates and 56 evaluator
+regressions are reproducible; backend total is 580, with 203 frontend and 24
+Chromium tests passing. No production code/model/
+prompt/threshold/schema change, migration 017 or paid dependency was needed.
+Gemini and customer-server secrets are missing; the live command reports
+unavailable, never falls back. Zero live embedding/generation/stream/hosted
+search/customer/triage journeys ran, and no email was sent. See
+[the formal evaluation report](RAG_EVALUATION.md).
+
+**9D not currently justified by measured evidence.** No load/resource failure
+was observed; 9A's real final-slot races and 9B's serial SSE/cooldown tests do not
+prove concurrent-stream capacity. Complete the blocked live 9C baseline first,
+then reassess if measurements or a concrete target-load requirement justify it.
+9D was not started; Phase 10 remains unstarted.
+
+**Phase 9 is not complete.** Safely configured
 customer-server/Gemini credentials and synthetic authenticated access are needed
 before live journeys (email configuration only for notification delivery).
 Storage API HTTP byte-deletion is not claimed by SQL tests. Fixed-window bursts,

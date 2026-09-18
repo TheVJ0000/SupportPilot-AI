@@ -364,8 +364,8 @@ rolled back, including pgtap extension creation and migration preflight grants.
 See [the security review](SECURITY_REVIEW.md) for the complete function inventory,
 table/actor/CRUD matrix, exact executed-suite results, dependency snapshot and
 remaining risks. Phase 9B deterministic Playwright integration is complete;
-9C formal RAG/live synthetic validation and possible 9D performance testing
-remain separate and unstarted; deployment-header/framing/CSP
+9C deterministic evaluation is complete, live synthetic validation is blocked,
+and possible 9D performance testing remains unstarted; deployment-header/framing/CSP
 checks remain Phase 10. Earlier Phase 8 checkpoint results above are historical.
 
 ### Phase 9B browser test boundary
@@ -393,7 +393,51 @@ This is not hosted/provider end-to-end validation, database tenant-isolation
 proof, an accessibility certification, capacity evaluation or deployment
 validation. No schema change, migration 017, live Gemini or Resend call occurred;
 the optional hosted authenticated browser smoke remains unverified. Phase 9C
-and Phase 10 remain unstarted. See [E2E testing](E2E_TESTING.md).
+live validation is blocked; Phase 10 remains unstarted. See [E2E testing](E2E_TESTING.md)
+and [formal RAG evaluation](RAG_EVALUATION.md).
+
+## Phase 9C evaluation boundary
+
+`backend/evals/rag` is explicit-command/test tooling, outside the packaged
+`app*` runtime. Production startup imports none of it and exposes no evaluation
+route. Versioned Pydantic annotations, deterministic metrics and sanitized
+reports require no new dependency or judge model. Default pytest remains offline.
+The test-only Python path makes the uninstalled eval package importable without
+changing runtime authentication/dependency wiring.
+
+Offline title/content lexical ranking is independent of case expectations;
+scripted SDK prose goes through the actual Gemini adapter and structured stream
+parser, then shared trusted citation reconstruction. This verifies contracts,
+not semantic/model quality. Actual chat context (recent six messages, 2,000
+characters) clarifies retrieval input only; no context text becomes citation
+evidence. Separate metrics retain misses, unsafe decisions, fact/citation errors,
+injection, isolation, provider errors and skipped-after-failure cases.
+
+Explicit live mode never falls back. Existing models/adapters remain generation
+`gemini-3.8-flash`, LOW, 1,200-token structured tool-free output; embeddings
+`gemini-embedding-2`, 768 finite dimensions. Required existing key, safe DB
+environment and operator verification of exact-model free access/billing-disabled
+status precede calls. Existing test-only libpq uses TLS verification. Synthetic
+document vectors are generated before seeding fresh users/workspaces/policies
+inside one transaction. Search uses authenticated fixture-user claims and the
+real scoped pgvector RPC, never a privileged service-role retrieval shortcut.
+Rollback/removal verification runs on success or failure; no schema migration,
+fixture commit, real-data deletion or production bypass is introduced.
+
+Live generation selects 16 of 36 cases (three real streaming paths), with one
+primary path per case and only current adapter transient retries. Failure stops
+the live loop; skipped cases cannot pass as safe refusals. Outputs omit raw
+prose/prompts, vectors, credentials and provider/SQL diagnostics. Customer HTTP
+persistence/triage smoke is separate and not simulated as live by the benchmark.
+
+On September 18, 2026 only deterministic evaluation ran: one retained lexical
+source miss, all offline initial gates passing, 580 backend regressions. Gemini
+and customer-server secrets are absent: live validation remains unverified,
+zero AI calls or hosted changes occurred. No production prompt/model/threshold
+or DB defect was established; no migration 017. Similarity ranges overlap and
+fixture cosine scores do not justify a production cutoff. 9C overall remains
+incomplete; 9D is not justified by currently measured performance evidence and
+neither 9D nor Phase 10 was begun. See [definitions/results/limitations](RAG_EVALUATION.md).
 
 Major business-owned entities will use `workspace_id` so every business's content can be scoped consistently.
 
