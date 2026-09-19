@@ -394,7 +394,7 @@ This is not hosted/provider end-to-end validation, database tenant-isolation
 proof, an accessibility certification, capacity evaluation or deployment
 validation. No schema change, migration 017, live Gemini or Resend call occurred;
 the optional hosted authenticated browser smoke remains unverified. Phase 9C
-live generation/customer validation remains incomplete; Phase 10 is unstarted. See [E2E testing](E2E_TESTING.md)
+live generation/customer validation remains incomplete. Phase 10A later added deployment readiness only; public deployment is unstarted. See [E2E testing](E2E_TESTING.md)
 and [formal RAG evaluation](RAG_EVALUATION.md).
 
 ## Phase 9C evaluation boundary
@@ -453,8 +453,39 @@ cases with rollback verified. No answer/stream success or model-quality pass is
 claimed. Gemini is private and the free project/billing-disabled status verified;
 SUPABASE_SECRET_KEY is still missing. Customer HTTP/persistence and optional
 triage are unverified. 583 backend, 203 frontend and 24 browser regressions pass.
-9C/9 overall are incomplete; no capacity result justifies 9D yet, and neither
-9D nor Phase 10 was begun. See [actual results/failures](RAG_EVALUATION.md).
+9C/9 overall are incomplete; no capacity result justifies 9D yet. Phase 10A later
+prepared deployment without retrying Gemini. See [actual results/failures](RAG_EVALUATION.md).
+
+## Phase 10A deployment topology
+
+The production-ready topology is intentionally small: a Render Free Python web
+service runs FastAPI, a Render static site serves the Vite bundle, and a second
+static site hosts the independent-origin widget demonstration. The existing
+Supabase Free project remains the durable Auth/Postgres/pgvector/Storage layer;
+there is no Render database, disk, cache or queue. Gemini and optional Resend
+remain replaceable outbound providers configured only on the backend.
+
+The backend binds Render's `$PORT`, exposes a provider-free `/api/health`, and
+accepts exactly the deployed frontend origin through `FRONTEND_URL`. The static
+frontend bakes its public Supabase URL/publishable key and exact API origin at
+build time. Render does not expose a Blueprint property for another service's
+public external URL in this pairing, so those real HTTPS origins are entered
+after allocation and never guessed. The external host receives only the public
+widget ID and validated SupportPilot origin; iframe API traffic still comes from
+the SupportPilot frontend origin.
+
+Render's Free backend sleeps after 15 idle minutes. The in-process worker runs
+and recovers eligible database-owned work while the process is awake; it is not
+always-on automation. The next wake/startup resumes durable pending state. No
+keep-alive traffic is used. Durable files remain in private Supabase Storage and
+durable records in Supabase Postgres, so Render's ephemeral filesystem is not an
+application datastore.
+
+Static responses add nosniff, strict-origin-when-cross-origin referrer policy and
+a conservative permissions policy. A blanket frame denial is intentionally
+absent because `/embed/:publicId` is designed for cross-origin framing. CSP is a
+post-deployment task: exact Render and Supabase origins must be known before a
+narrow `connect-src`/framing policy can be verified. See [deployment](DEPLOYMENT.md).
 
 Major business-owned entities will use `workspace_id` so every business's content can be scoped consistently.
 

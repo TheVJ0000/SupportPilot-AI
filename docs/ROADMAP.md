@@ -211,7 +211,7 @@ email or paid billing. Phase 9C is not complete. See
 was observed; 9A's real final-slot races and 9B's serial SSE/cooldown tests do not
 prove concurrent-stream capacity. Complete the blocked live 9C baseline first,
 then reassess if measurements or a concrete target-load requirement justify it.
-9D was not started; Phase 10 remains unstarted.
+9D was not started. Phase 10A deployment readiness is now complete; public deployment remains unstarted.
 
 **Phase 9 is not complete.** Successful live generation/streaming and private
 customer-server configuration are needed before the real synthetic customer
@@ -219,7 +219,7 @@ journey (email configuration only for optional notification delivery).
 Storage API HTTP byte-deletion is not claimed by SQL tests. Fixed-window bursts,
 shared-widget availability, aggregate AI-budget/bot protection, XSS/key compromise
 and production capacity remain limitations. Deployment/framing/CSP, exact hosted
-CORS/Auth redirects, logs and renewed free-tier checks remain Phase 10.
+CORS/Auth redirects and platform logs remain post-deployment Phase 10 work; Phase 10A rechecked free tiers and prepared configuration.
 
 **Objective:** Raise the project from working demo to credible professional portfolio quality through broad testing, evaluation, and security review.
 
@@ -236,6 +236,8 @@ CORS/Auth redirects, logs and renewed free-tier checks remain Phase 10.
 ## Phase 10 — Zero-cost production deployment and portfolio packaging
 
 **Objective:** Deploy the finished application using verified free-tier services and present it professionally as an Upwork portfolio project.
+
+**Phase 10A — deployment readiness complete (September 19, 2026).** Current official Render documentation was rechecked. `render.yaml` defines a Free Python/FastAPI service plus free React and external-widget static sites, with manual initial deploys, exact-origin configuration, lightweight health checking, SPA rewriting and safe baseline static headers. No Render database, paid plan, disk, queue, domain or keep-alive was added. GitHub Actions runs Python 3.12/backend checks, Node 24/frontend checks, Chromium Playwright and deterministic offline RAG with no deployment/provider secrets or live services. Production bundle scanning rejects server-secret names and safe environment markers. Beginner deployment and synthetic Northstar demo guides document Auth redirects, CORS, sleeping/in-process-worker behavior, ephemeral disk, secret rotation, rollback and smoke checks. No public Render resource or URL exists yet; CSP awaits exact origins. Live Phase 9 generation remains unverified after the bounded HTTP 503, and post-deployment validation will make only one bounded generation check. No migration 017 was required.
 
 **Completion criteria:**
 

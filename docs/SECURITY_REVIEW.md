@@ -457,6 +457,39 @@ Phrase matching is not semantic entailment and can misclassify negations;
 instruction-fragment leakage detection is incomplete against arbitrary
 paraphrases. Authored offline answers cannot prove live injection resistance.
 Capacity/concurrent-stream behavior is unmeasured; no observed performance
-failure currently justifies 9D. Reassess after safe live 9C; 9D/10 were not started.
+failure currently justifies 9D. Reassess after safe live 9C; 9D was not started.
 9C overall and Phase 9 overall remain incomplete. See
 [the formal report and exact remaining blockers](RAG_EVALUATION.md).
+
+## Phase 10A deployment-readiness security review (September 19, 2026)
+
+The Render Blueprint contains three resources and no database, disk, cache,
+queue or paid plan. Secret/user-provided values use service-level `sync: false`;
+server secrets never use `VITE_`. The frontend production build scans generated
+files for the `SUPABASE_SECRET_KEY`, `GEMINI_API_KEY` and `RESEND_API_KEY` names
+and for safely supplied marker/value strings without printing those values.
+GitHub Actions supplies synthetic markers only and makes no live Gemini,
+Supabase-hosted or Resend request.
+
+Production CORS remains one explicit frontend HTTPS origin with GET/POST/PUT/
+PATCH only. The independent widget host is not an API CORS origin. Static sites
+add nosniff, strict-origin referrer behavior and deny camera, microphone and
+geolocation. They do not set global X-Frame-Options DENY. CSP is explicitly
+deferred until exact deployed origins can be tested without breaking Supabase
+connections or `/embed` framing; no wildcard policy was guessed.
+
+The health route returns constant local application status without calling the
+database, Gemini or Resend. Production mode does not add debug logging. Existing
+application paths do not log provider secrets, raw session credentials/JWTs,
+transcripts, evidence, prompts or `PGPASSWORD`; Render platform/proxy logging
+still needs deployment-time review. Persistence remains Supabase-only and the
+Free Render filesystem is disposable.
+
+The Free backend can sleep after 15 idle minutes. Its in-process triage/outbox
+worker is therefore not continuously available, but pending state and attempt
+fences are durable in Supabase and startup resumes eligible work. No keep-alive
+was introduced. Automatic Render deployment is off until CI and the initial
+manual smoke pass. Public deployment, exact Auth redirects, CSP and platform-log
+inspection are not claimed complete. Phase 9 live generation remains unverified
+after the bounded provider HTTP 503; the post-deployment plan permits one bounded
+generation check, not repeated manual retries. No migration 017 was required.
