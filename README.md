@@ -89,6 +89,22 @@ The applications run locally without Docker, paid services, or external accounts
 - Public health endpoint: `http://127.0.0.1:8000/api/health`
 - Protected identity endpoint: `http://127.0.0.1:8000/api/auth/me`
 
+### One-click Windows launcher
+
+On Windows, double-click **`Start-SupportPilot.cmd`** in the repository root.
+It validates the existing Python/Node environments, starts the backend and
+frontend in two clearly named command windows, waits until both health checks
+pass, and opens the application in Chrome (or the default browser if Chrome is
+not installed in a standard location). Keep both command windows open while
+using localhost; closing them or restarting Windows stops the local site. Run
+the launcher again whenever you want to resume local development. It safely
+reuses already-healthy servers and reports a clear error if another program owns
+port 5173 or 8000.
+
+This makes local startup repeatable, but it does not turn localhost into a public
+always-on website. Phase 10 deployment will provide an address that remains
+available without running these processes on this computer.
+
 The product landing page and public health indicator work without an environment file. To enable registration, login, workspaces, and authenticated API verification, copy `.env.example` to `.env` at the repository root and configure the frontend/backend Supabase URL and publishable-key variables. Add a server-only Gemini API key to enable indexing, retrieval embeddings, and grounded answer generation. Set `SUPABASE_SECRET_KEY` only on FastAPI to enable the Phase 5A customer-chat persistence endpoints; when it is absent, only those endpoints return a controlled `503` and the rest of the application still starts. The grounded generation call has no web search, URL context, tools, or function access and receives only the normalized standalone question, or bounded server-owned context for a customer follow-up, plus retrieved evidence. Customer chat uses `POST /api/chat/conversations/{conversation_id}/turns/stream` with `text/event-stream` and `started`, `delta`, `complete`, or safe `error` events; the existing non-streaming turn endpoint remains available. See `docs/SUPABASE_SETUP.md` for the Free-plan setup and smoke-test checklist.
 
 The Knowledge Base route is `/app/knowledge`. File uploads use the authenticated Supabase client and the private `knowledge-files` bucket. SupportPilot limits each source file to 10 MB, even though the Supabase Free plan currently permits a higher per-file maximum. Owners/admins can recover interrupted uploads and explicitly process pending/failed sources. PDF extraction is limited to 300 pages and does not use OCR, so scanned/image-only PDFs are rejected safely. DOCX files receive ZIP-container safety checks before parsing. TXT and Markdown must be valid UTF-8.
