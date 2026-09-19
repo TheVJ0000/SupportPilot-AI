@@ -146,7 +146,7 @@ class State:
         self.widget = True
         self.beta_widget = False
         self.customer_id = uuid4()
-        self.hash = None
+        self.hashes = set()
         self.history = []
         self.turns = {}
         self.attempts = []
@@ -404,7 +404,7 @@ class CustomerGateway:
     async def create_session(self, public_id, token_hash, expires_at):
         if str(public_id) != PUBLIC or not state.widget:
             raise CustomerChatGatewayError("create_customer_chat_session", "P0002")
-        state.hash = token_hash
+        state.hashes.add(token_hash)
         return CreatedCustomerSession(
             customer_session_id=uuid4(),
             conversation_id=state.customer_id,
@@ -414,7 +414,7 @@ class CustomerGateway:
         )
 
     def authorize(self, conversation_id, token_hash):
-        if conversation_id != state.customer_id or token_hash != state.hash:
+        if conversation_id != state.customer_id or token_hash not in state.hashes:
             raise CustomerChatGatewayError("get_customer_conversation", "28000")
 
     async def get_conversation(self, conversation_id, token_hash, *, public_request=False):

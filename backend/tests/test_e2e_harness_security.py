@@ -5,8 +5,9 @@ import importlib.util
 import json
 import subprocess
 import sys
+from datetime import UTC, datetime
 from pathlib import Path
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import httpx
 import pytest
@@ -100,3 +101,26 @@ async def test_harness_is_separate_and_accepts_only_current_random_test_token():
         assert (
             await client.get("/api/auth/me", headers={"Authorization": f"Bearer {token}"})
         ).status_code == 401
+
+
+@pytest.mark.anyio
+async def test_harness_keeps_overlapping_customer_sessions_valid_until_reset():
+    spec = importlib.util.spec_from_file_location(
+        "isolated_browser_session_harness", ROOT / "tests/e2e_app.py"
+    )
+    assert spec and spec.loader
+    harness = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(harness)
+    gateway = harness.CustomerGateway()
+    first_hash = "a" * 64
+    second_hash = "b" * 64
+
+    expires_at = datetime.now(UTC)
+    first = await gateway.create_session(UUID(harness.PUBLIC), first_hash, expires_at)
+    second = await gateway.create_session(UUID(harness.PUBLIC), second_hash, expires_at)
+
+    gateway.authorize(first.conversation_id, first_hash)
+    gateway.authorize(second.conversation_id, second_hash)
+    harness.state.reset(harness.Reset(token=str(uuid4())))
+    with pytest.raises(harness.CustomerChatGatewayError):
+        gateway.authorize(first.conversation_id, first_hash)
