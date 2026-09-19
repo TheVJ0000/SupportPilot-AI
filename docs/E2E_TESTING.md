@@ -9,7 +9,11 @@ provider credential, billing, or AI quota is required.
 
 Use Node >=22.12 and Python >=3.12. Install the existing backend development
 dependencies into `backend/.venv` first (see README). The configuration uses
-`.venv/Scripts/python.exe` on Windows and `.venv/bin/python` elsewhere.
+`.venv/Scripts/python.exe` on Windows and `.venv/bin/python` elsewhere when that
+local executable exists. If it does not, the runner falls back to `python` on
+Windows or `python3` on POSIX. Set `SUPPORTPILOT_E2E_PYTHON` to select an
+existing Python executable explicitly; CI sets it to the Python 3.12 `python`
+placed on `PATH` by `actions/setup-python`.
 
 From `frontend`:
 

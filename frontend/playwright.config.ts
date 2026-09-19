@@ -1,8 +1,17 @@
 import { defineConfig, devices } from '@playwright/test'
+import { existsSync } from 'node:fs'
 import path from 'node:path'
 
 const backend = path.resolve(import.meta.dirname, '../backend')
-const python = path.join(backend, '.venv', process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python')
+const configuredPython = process.env.SUPPORTPILOT_E2E_PYTHON
+const localPython = path.join(
+  backend,
+  '.venv',
+  process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python',
+)
+const python =
+  configuredPython ??
+  (existsSync(localPython) ? localPython : process.platform === 'win32' ? 'python' : 'python3')
 
 export default defineConfig({
   testDir: './e2e',
