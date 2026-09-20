@@ -28,6 +28,14 @@ def test_gemini_key_is_optional_and_ai_defaults_are_safe(monkeypatch) -> None:
     assert settings.gemini_embedding_dimension == 768
 
 
+def test_gemini_embedding_dimension_accepts_environment_string(monkeypatch) -> None:
+    monkeypatch.setenv("GEMINI_EMBEDDING_DIMENSION", "768")
+
+    settings = Settings(_env_file=None)
+
+    assert settings.gemini_embedding_dimension == 768
+
+
 def test_production_configuration_keeps_exact_frontend_origin_and_optional_services(
     monkeypatch,
 ) -> None:

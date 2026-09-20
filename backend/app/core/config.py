@@ -1,8 +1,8 @@
 from functools import lru_cache
 from pathlib import Path
-from typing import Literal
+from typing import Annotated, Literal
 
-from pydantic import AnyHttpUrl, SecretStr
+from pydantic import AnyHttpUrl, Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 ROOT_ENV_FILE = Path(__file__).resolve().parents[3] / ".env"
@@ -21,7 +21,7 @@ class Settings(BaseSettings):
     gemini_generation_model: str = "gemini-3.8-flash"
     gemini_triage_model: str = "gemini-3.8-flash"
     gemini_embedding_model: str = "gemini-embedding-2"
-    gemini_embedding_dimension: Literal[768] = 768
+    gemini_embedding_dimension: Annotated[int, Field(ge=768, le=768)] = 768
     resend_api_key: SecretStr | None = None
     resend_from_email: str | None = None
 
