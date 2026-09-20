@@ -261,9 +261,11 @@ performed the bounded production smoke described below.
 The production workspace `Northstar Outfitters — Synthetic Demo` indexed five
 small synthetic FAQs through the deployed frontend, FastAPI, Gemini embeddings,
 Supabase and pgvector. The bounded supported question was: “When will my domestic
-order ship, and how do I track it?” The first logical generation check succeeded
-on one physical provider attempt. The real response streamed through SSE, stated
-the indexed 1–2 business-day dispatch, tracking-after-dispatch and 3–5
+order ship, and how do I track it?” The one logical production request succeeded.
+The adapter does not persist a success-side physical-attempt counter, so the
+exact count is not observable; existing retry policy bounds it to one through
+three, and no manual retry was made. The real response streamed through SSE,
+stated the indexed 1–2 business-day dispatch, tracking-after-dispatch and 3–5
 business-day delivery facts, and cited only the matching shipping/tracking FAQ.
 No external source or fabricated citation appeared.
 
