@@ -19,12 +19,14 @@
   <script>
     (function () {
       var params = new URLSearchParams(window.location.search);
-      var publicId = params.get('publicId') || '';
+      // Public, synthetic defaults make the deployed portfolio demo useful at its bare URL.
+      // Query parameters remain available for local and isolated test environments.
+      var publicId = params.get('publicId') || '4aa6cd9c-810b-4b25-9291-61edc5592185';
       var status = document.getElementById('widget-setup');
       if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(publicId)) return;
       try {
         // Only this synthetic demo accepts an origin override. The widget never does.
-        var origin = new URL(params.get('supportOrigin') || 'http://localhost:5173');
+        var origin = new URL(params.get('supportOrigin') || 'https://supportpilot-web-6w61.onrender.com');
         if (!/^https?:$/.test(origin.protocol) || origin.username || origin.password || origin.pathname !== '/' || origin.search || origin.hash) throw new Error('Invalid origin');
         var script = document.createElement('script');
         script.src = origin.origin + '/supportpilot-widget.js';

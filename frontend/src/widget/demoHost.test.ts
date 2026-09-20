@@ -5,6 +5,7 @@ const html = readFileSync('../examples/widget-host/index.html', 'utf8')
 const parsed = new DOMParser().parseFromString(html,'text/html')
 const code = parsed.scripts[0].textContent!
 const publicId='10000000-0000-4000-8000-000000000001'
+const deployedPublicId='4aa6cd9c-810b-4b25-9291-61edc5592185'
 beforeEach(() => {
   document.body.replaceChildren(...Array.from(parsed.body.children).filter(node => node.tagName !== 'SCRIPT').map(node => document.importNode(node,true)))
 })
@@ -14,6 +15,11 @@ function run(query: string) {
   return document.querySelector('script')
 }
 describe('synthetic independent widget host', () => {
+  it('uses safe synthetic production defaults at the bare public demo URL', () => {
+    const script=run('')!
+    expect(script.src).toBe('https://supportpilot-web-6w61.onrender.com/supportpilot-widget.js')
+    expect(script.getAttribute('data-supportpilot-public-id')).toBe(deployedPublicId)
+  })
   it('loads only the stable widget asset from a validated demo origin', () => {
     const script=run(`publicId=${publicId}&supportOrigin=${encodeURIComponent('https://support.example')}`)!
     expect(script.src).toBe('https://support.example/supportpilot-widget.js')

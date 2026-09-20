@@ -1,26 +1,69 @@
 # SupportPilot AI
 
-SupportPilot AI is a full-stack GenAI customer-support platform built as a personal portfolio project. It combines workspace-scoped RAG, Gemini generation and embeddings, pgvector retrieval, streaming chat with trusted citations, a bounded AI triage agent, multi-tenant security, an embeddable widget, admin support operations, and dedicated evaluation and browser testing. It demonstrates engineering decisions and limitations without claiming real customers or production usage.
+**A full-stack GenAI customer-support platform with grounded RAG, trusted citations, streaming chat, bounded agent automation, and multi-tenant security.**
 
-## Implemented capabilities
+SupportPilot AI is a public personal portfolio project built with React, FastAPI, Supabase, pgvector, and Google Gemini. It ingests business knowledge, retrieves workspace-scoped evidence, streams structured answers with server-rebuilt citations, handles feedback and human handoff, and gives support teams an operational dashboard plus an embeddable external-origin widget.
 
-- Business authentication and isolated workspaces
-- Support knowledge ingestion from documents and FAQs
-- Workspace-scoped RAG with grounded answers and citations
-- Hosted customer support chat with streaming responses
-- Multi-turn conversations and customer feedback
-- Safe insufficient-evidence handling
-- Bounded Support Triage Agent for escalation workflows
-- Admin views for conversations, feedback, sources, escalations, and basic analytics
-- Embeddable website support widget
+## Live Demo
 
-## Planned stack
+- **Application:** <https://supportpilot-web-6w61.onrender.com>
+- **External widget demo:** <https://supportpilot-widget-demo.onrender.com>
+- **API health:** <https://supportpilot-api-ytih.onrender.com/api/health>
 
-**Frontend:** React, TypeScript, Vite, Tailwind CSS, shadcn/ui  
-**Backend:** Python, FastAPI, Pydantic  
-**Data:** Supabase PostgreSQL, Supabase Auth, Supabase Storage, pgvector  
-**AI:** Gemini initially, RAG, Gemini embeddings, provider abstraction, LangGraph only where justified  
-**Testing:** pytest, Vitest, React Testing Library, Playwright, dedicated RAG evaluation cases
+The services use Render Free and may need a short cold start after inactivity. Source code and technical documentation are available in this repository. The demo uses fictional Northstar Outfitters data; it does not represent real customers or commercial usage.
+
+## Engineering Highlights
+
+- Workspace-scoped authorization and Row Level Security across Supabase Auth, PostgreSQL, pgvector, and private Storage.
+- Gemini Embedding 2 vectors at 768 dimensions, provider-isolated structured generation, and evidence-bounded prompts.
+- Trusted citations rebuilt from server-owned retrieval metadata instead of accepting model-provided source details.
+- Real Server-Sent Events streaming with persisted completed turns, idempotent retries, feedback, and human handoff.
+- A bounded escalation triage agent with one allow-listed tool, validated output, durable retry/audit state, and no unrestricted data or infrastructure access.
+- Database-owned atomic public rate limits, explicit admin lifecycles, and a CSS-isolated iframe widget for third-party sites.
+- Deterministic RAG evaluation, hosted pgTAP security tests, browser integration, and GitHub Actions CI.
+- A zero-cost public baseline using free tiers, with provider and deployment limitations documented honestly.
+
+## Architecture
+
+```mermaid
+flowchart TD
+    Users[Customer / Admin Browser] --> Web[Render · React + Vite]
+    Web --> API[Render · FastAPI]
+    API --> Gemini[Gemini API]
+    API --> Platform[Supabase Auth · PostgreSQL · pgvector · Storage]
+    Platform --> Durable[Durable knowledge · conversations · escalations]
+    Site[External Business Site] --> Widget[SupportPilot widget iframe]
+    Widget --> Web
+```
+
+The normal question-answering path is retrieval-augmented generation, not an autonomous agent: retrieve workspace evidence → evaluate support → generate a structured answer → rebuild trusted citations → persist the conversation. The separate triage agent is limited to classifying unresolved conversations and requesting one validated escalation action. See [the full architecture](docs/ARCHITECTURE.md).
+
+## Testing and Evaluation
+
+- **Backend:** 586 pytest tests, plus Ruff lint and format checks.
+- **Frontend:** 204 Vitest/React Testing Library tests, ESLint, TypeScript, and production build validation.
+- **Browser:** 24 deterministic Chromium Playwright tests across authentication, isolation, chat, admin operations, widget embedding, and mobile layouts.
+- **Database security:** 16 hosted transactional pgTAP suites with 1,004 assertions, plus real PostgreSQL concurrency checks.
+- **RAG:** 36-case deterministic benchmark; Hit@8 100%, Recall@8 98.39%, answerability 100%, citation validity 100%, and zero cross-workspace leakage in the fixture run. A separate bounded live retrieval run used Gemini embeddings and hosted pgvector; it is documented separately from deterministic generation results.
+
+These are distinct test categories, not one combined count. Metrics describe the documented synthetic evaluation only and are not claims of universal AI accuracy. See [RAG evaluation](docs/RAG_EVALUATION.md), [browser testing](docs/E2E_TESTING.md), and [security review](docs/SECURITY_REVIEW.md).
+
+## Portfolio Screenshots
+
+| Public application | External widget on a synthetic site |
+| --- | --- |
+| ![SupportPilot AI public landing page](docs/portfolio/screenshots/landing-page-desktop.png) | ![SupportPilot widget launcher embedded on the fictional Acme Demo Store](docs/portfolio/screenshots/external-widget-desktop.png) |
+
+The screenshot set also includes a [mobile widget viewport](docs/portfolio/screenshots/external-widget-mobile.png). Authenticated screenshots were deliberately omitted because no safe reusable demo login session was available during the release freeze.
+
+## Technology Stack
+
+- **Frontend:** React, TypeScript, Vite, Tailwind CSS
+- **Backend:** Python, FastAPI, Pydantic
+- **Data:** Supabase PostgreSQL, Supabase Auth, Supabase Storage, pgvector
+- **AI:** Google Gemini behind replaceable generation and embedding interfaces; RAG plus a bounded triage workflow
+- **Testing:** pytest, Vitest, React Testing Library, Playwright, pgTAP, dedicated RAG evaluation
+- **Delivery:** GitHub Actions and Render Blueprint on free tiers
 
 ## Current status
 
@@ -79,6 +122,8 @@ The initial portfolio-development and public-demo target is **₹0 / $0 infrastr
 - [`docs/RAG_EVALUATION.md`](docs/RAG_EVALUATION.md) — separate offline/live retrieval metrics, generation failure history and remaining validation
 - [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) — zero-cost Render Blueprint setup, secrets, CORS, smoke tests and limitations
 - [`docs/DEMO_DATA.md`](docs/DEMO_DATA.md) — clearly labelled synthetic Northstar Outfitters portfolio scenario
+- [`docs/PORTFOLIO_HANDOFF.md`](docs/PORTFOLIO_HANDOFF.md) — factual Upwork, LinkedIn, resume, portfolio, and interview presentation copy
+- [`CHANGELOG.md`](CHANGELOG.md) — stable portfolio release summary and known limitations
 
 ## Security note
 

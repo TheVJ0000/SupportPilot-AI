@@ -58,7 +58,7 @@ export function LandingPage() {
         </section>
 
         <footer className="flex items-center justify-between border-t border-white/10 py-5 text-xs text-slate-500">
-          <span>Personal portfolio project · Phase 2</span>
+          <span>Personal portfolio project · v1.0.0</span>
           <BackendHealthStatus />
         </footer>
       </div>

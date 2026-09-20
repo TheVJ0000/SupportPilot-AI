@@ -68,7 +68,7 @@ cd examples/widget-host
 python -m http.server 4174 --bind 127.0.0.1
 ```
 
-Open `http://localhost:4174/?publicId=<public-id>&supportOrigin=http://localhost:5173`, replacing the ID with a synthetic demo workspace's copied public ID. Host port 4174 and iframe port 5173 are genuinely different origins. The fictional Acme Demo Store has independent styles/content, no checkout, account collection or duplicated chat engine.
+The deployed portfolio host at <https://supportpilot-widget-demo.onrender.com> uses a public synthetic workspace ID and the production SupportPilot origin by default, so its bare URL is a working demo. For local or isolated testing, open `http://localhost:4174/?publicId=<public-id>&supportOrigin=http://localhost:5173`, replacing the ID with a synthetic demo workspace's copied public ID. Host port 4174 and iframe port 5173 are genuinely different origins. The fictional Acme Demo Store has independent styles/content, no checkout, account collection or duplicated chat engine.
 
 Only this demo page accepts `supportOrigin`; it validates HTTP/S, no credentials, a bare origin with no path/query/fragment, and a compatible UUID. The production widget has no origin override. Never add credentials to this URL.
 

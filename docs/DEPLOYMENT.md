@@ -126,13 +126,19 @@ The health probe is deliberately local and lightweight. It does not call Gemini,
 
 ## Widget demo
 
-Use a synthetic workspace widget public ID from the application’s widget admin page. Open:
+The checked-in public portfolio deployment includes a synthetic public widget ID and the production SupportPilot origin, so its bare URL is immediately usable:
+
+```text
+https://supportpilot-widget-demo.onrender.com
+```
+
+For another deployment or local test, use a synthetic workspace widget public ID from the application’s widget admin page and open:
 
 ```text
 https://<widget-demo-origin>/?publicId=<synthetic-public-id>&supportOrigin=https%3A%2F%2F<supportpilot-frontend-origin>
 ```
 
-The existing page validates the UUID-shaped public ID and the HTTP(S) SupportPilot origin before loading `/supportpilot-widget.js`. Never put a workspace UUID, JWT, Supabase key, customer session token or backend secret in this URL. `publicId` is the public widget identifier, not the workspace identifier.
+The page validates the UUID-shaped public ID and the HTTP(S) SupportPilot origin before loading `/supportpilot-widget.js`. Its checked-in defaults are public synthetic demo configuration, never credentials. Never put a workspace UUID, JWT, Supabase key, customer session token or backend secret in this URL. `publicId` is the public widget identifier, not the workspace identifier.
 
 ## Security headers and CSP
 
