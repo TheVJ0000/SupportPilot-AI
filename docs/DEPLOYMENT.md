@@ -10,6 +10,15 @@ The zero-cost portfolio deployment uses three Render resources from `render.yaml
 
 The existing Supabase Free project remains the only database, Auth, Storage and pgvector platform. Gemini remains the configurable generation and embedding provider. Resend remains optional and disabled when its settings are absent. Render does not host a database, queue, persistent disk or key-value service for this project.
 
+## Live portfolio endpoints
+
+- Application: <https://supportpilot-web-6w61.onrender.com>
+- API health: <https://supportpilot-api-ytih.onrender.com/api/health>
+- External widget demonstration: <https://supportpilot-widget-demo.onrender.com>
+
+These are public demo URLs, not evidence of commercial customers, uptime or an
+always-on production SLA.
+
 ## Why Render was chosen
 
 Render currently provides Free web services and free static sites, supports monorepo root directories and Blueprint configuration, supplies managed HTTPS `onrender.com` URLs, and can run the existing Python and Vite build commands. This is suitable for a portfolio demonstration without buying a domain or enabling a paid compute plan.
@@ -169,4 +178,65 @@ Render Free web services retain only limited recent rollback history. Roll back 
 
 Keep billing disabled where already confirmed, remain on free plans, monitor included usage manually, and use synthetic/non-confidential data only. No custom domain is required; Render’s HTTPS static-site URL is suitable for a portfolio or client demo.
 
-Phase 10A prepares deployment but does not claim that public resources exist. Phase 9 live generation also remains unverified after the bounded `gemini-3.8-flash` HTTP 503. Post-deployment validation must use one bounded generation check, not repeated provider retries. Capacity, uptime, email delivery, CSP, platform logs and real public URLs remain deployment-time validations.
+## Phase 10B production record — September 21, 2026
+
+The Blueprint is deployed in the authorized Render workspace with three free
+resources and manual deploys:
+
+- Frontend portfolio: <https://supportpilot-web-6w61.onrender.com>
+- Backend health: <https://supportpilot-api-ytih.onrender.com/api/health>
+- External widget demo: <https://supportpilot-widget-demo.onrender.com>
+
+The API, frontend and widget were deployed from reviewed commit
+`35671811115dfee83ce787c81349371b72719771` before this documentation-only
+checkpoint. The original deploy exposed one real configuration-parsing defect:
+Pydantic rejected Render's string form of the fixed 768 embedding dimension.
+The narrow fix and regression are in that commit. No migration 017 was needed.
+
+Production verification passed the provider-free health route, landing page,
+direct `/login`, `/register` and authenticated SPA routes, exact Supabase Site
+URL and production redirect while retaining `http://localhost:5173`, synthetic
+authentication/session restoration, and protected-route behavior. A synthetic
+`Northstar Outfitters — Synthetic Demo` workspace processed and indexed five
+small FAQ sources. One bounded supported question completed through Gemini,
+SSE, pgvector and persistence with the correct FAQ citation. One deliberately
+absent price-match question returned the controlled insufficient-evidence text.
+Feedback, history reload, human request, durable escalation creation, admin
+dashboard/lists/detail, and resolve/reopen lifecycle all passed. The separate
+widget host loaded the SupportPilot-origin iframe and passed close/reopen; its
+host storage contained no customer state and host text contained no transcript.
+
+The escalation's optional Gemini triage classification recorded two safe
+provider-unavailable attempts before the worker's third automatic attempt
+completed successfully as a low-priority policy issue. The durable audit trail
+and manual lifecycle remained available throughout. Resend was not configured,
+so the resulting notification stayed pending and no email was sent.
+
+Production CORS accepted only the exact frontend origin and returned no allow
+origin for a random untrusted origin. Allowed methods remained GET, POST, PATCH
+and PUT; DELETE was absent. Frontend and widget responses returned `nosniff`,
+`strict-origin-when-cross-origin`, and `camera=(), microphone=(), geolocation=()`;
+neither set a global `X-Frame-Options: DENY`. The deployed bundle contained the
+expected public API/Supabase URL and no server secret-key, Gemini-key or
+Resend-key names/values. Render log review found no secret names, JWTs, customer
+session tokens, transcript text, retrieved evidence or prompts.
+
+A CSP remains intentionally unshipped. The same frontend hosts the authenticated
+app, public chat and arbitrary-customer `/embed` surface; a single safe policy
+must preserve Supabase HTTPS/WSS Auth traffic and explicitly support third-party
+embedding without broad `connect-src *` or `frame-ancestors 'none'`. The smoke
+proved the current demo origin but did not establish the complete future host
+allow-list, so a guessed header would be less secure than the documented gap.
+
+One authenticated admin load observed the documented Render Free wake delay of
+roughly 50 seconds; warm static and health checks were under one second to a few
+seconds. No keep-alive was added. The in-process triage/outbox worker still runs
+only while the backend is awake and resumes durable eligible work on startup; it
+is not represented as always-on processing.
+
+Phase 10 is complete for the zero-cost public portfolio baseline. Remaining
+limitations are CSP finalization for an explicit embedding-host policy, Render
+Free cold starts/worker sleep, optional email delivery, aggregate AI-budget/bot
+protection, and unmeasured production capacity. Automatic deploys remain off;
+no paid billing, database, disk, cache, queue, domain or artificial traffic was
+introduced.

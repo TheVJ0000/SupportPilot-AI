@@ -390,11 +390,12 @@ including semantic control and 390×844 viewport checks; separately 524 backend
 and 203 frontend tests pass. Closed customer chats now explicitly explain their
 read-only state in both shared presentations, with component regressions.
 
-This is not hosted/provider end-to-end validation, database tenant-isolation
-proof, an accessibility certification, capacity evaluation or deployment
-validation. No schema change, migration 017, live Gemini or Resend call occurred;
-the optional hosted authenticated browser smoke remains unverified. Phase 9C
-live generation/customer validation remains incomplete. Phase 10A later added deployment readiness only; public deployment is unstarted. See [E2E testing](E2E_TESTING.md)
+At the Phase 9B checkpoint this was not hosted/provider end-to-end validation,
+database tenant-isolation proof, an accessibility certification, capacity
+evaluation or deployment validation. No schema change, migration 017, live
+Gemini or Resend call occurred in that checkpoint; the hosted authenticated
+browser smoke was then unverified. Phase 10B later completed the bounded hosted
+customer/deployment validation described below. See [E2E testing](E2E_TESTING.md)
 and [formal RAG evaluation](RAG_EVALUATION.md).
 
 ## Phase 9C evaluation boundary
@@ -450,11 +451,13 @@ bounded retries and limits remain unchanged. No dependency or migration 017.
 Original live generation failed HTTP 400; corrected live generation reached
 HTTP 503 on its initial request and two existing retries, then halted remaining
 cases with rollback verified. No answer/stream success or model-quality pass is
-claimed. Gemini is private and the free project/billing-disabled status verified;
-SUPABASE_SECRET_KEY is still missing. Customer HTTP/persistence and optional
-triage are unverified. 583 backend, 203 frontend and 24 browser regressions pass.
-9C/9 overall are incomplete; no capacity result justifies 9D yet. Phase 10A later
-prepared deployment without retrying Gemini. See [actual results/failures](RAG_EVALUATION.md).
+claimed for that historical evaluator run. Gemini is private and the free
+project/billing-disabled status verified. Phase 10B later configured the
+server-only Supabase secret on Render and completed the missing production
+customer HTTP/SSE/persistence path. One supported generation streamed with a
+trusted citation and one absent-policy turn refused safely. Phase 9C/9 are now
+complete at their defined validation baseline; no capacity result justifies 9D.
+See [actual results/failures](RAG_EVALUATION.md).
 
 ## Phase 10A deployment topology
 
@@ -486,6 +489,49 @@ a conservative permissions policy. A blanket frame denial is intentionally
 absent because `/embed/:publicId` is designed for cross-origin framing. CSP is a
 post-deployment task: exact Render and Supabase origins must be known before a
 narrow `connect-src`/framing policy can be verified. See [deployment](DEPLOYMENT.md).
+
+## Phase 10B deployed topology and observed behavior
+
+The topology above is now live at the exact origins documented in
+[deployment](DEPLOYMENT.md). Render hosts only the stateless FastAPI process and
+two static sites; Supabase remains the durable system of record. The production
+frontend calls only the exact API origin, Supabase HTTPS/WSS services, and its own
+assets. The external widget host receives a public integration ID and frontend
+origin, creates a SupportPilot-origin iframe, and retains no customer session or
+transcript in host storage.
+
+The smoke exercised the full runtime path:
+
+```text
+public chat → FastAPI session/turn RPC → workspace-scoped pgvector retrieval
+→ structured Gemini decision → validated trusted citation → SSE → persistence
+```
+
+Five synthetic FAQs were extracted and indexed with real Gemini embeddings. A
+supported shipping question completed the path above; an absent price-match
+question produced the application-controlled insufficient-evidence response.
+Feedback, history restoration and human-request escalation persisted correctly.
+Admin reads and conversation resolve/reopen lifecycle were server-confirmed.
+
+The triage worker created/reused the durable escalation. Two attempts recorded
+safe provider-unavailable errors; the third automatic attempt completed with a
+low-priority policy classification and summary. This demonstrates durable,
+bounded recovery without a manual loop. With Resend unset, the notification
+remained pending and no email was attempted.
+
+Exact-origin CORS allows the frontend with GET/POST/PATCH/PUT and rejects an
+untrusted origin; DELETE remains absent. Static headers passed as designed. A CSP
+is still omitted because the same build serves the admin app, public chat and an
+arbitrary-customer embedding surface. Exact Supabase connections are known, but
+the complete permitted embedding-host set is not; publishing either a wildcard
+connection policy or a frame-denying policy would be incorrect. This is a known
+security limitation, not an implied absence of other controls.
+
+Render Free sleep was observed as an approximately 50-second authenticated API
+wake. The process-local worker is active only while FastAPI is awake; Supabase
+attempt fences and pending records make recovery durable, but the design does
+not claim continuously running background work. No keep-alive or paid worker was
+introduced.
 
 Major business-owned entities will use `workspace_id` so every business's content can be scoped consistently.
 

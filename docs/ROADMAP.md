@@ -191,35 +191,41 @@ whitespace PASS. No SQL change or migration 017; Phase 9A hosted DB checks were
 not rerun. No live Gemini/Resend or hosted authenticated browser smoke ran. See
 [the reproducible E2E guide and limitations](E2E_TESTING.md).
 
-**Phase 9C — deterministic evaluation complete; live embeddings/hosted retrieval
-validated, generation incomplete (September 18, 2026).** Version 1.0.0 retains
+**Phase 9C — complete after bounded deployed validation (September 21, 2026).** Version 1.0.0 retains
 36 synthetic cases and independent metric gates. Offline lexical Hit@8 100%,
 Recall@8 98.39% and its source miss remain labelled fixture measurements.
 Separate live semantic retrieval passed Hit@1 93.55%, Hit@8/Recall@8 100%,
 MRR 0.96774, Beta isolation control and rollback. Fixture setup role restoration
 and installed-SDK request serialization were fixed with regressions. Original
 generation failed HTTP 400; corrected generation failed HTTP 503 after only
-the existing bounded retries, then stopped. No successful live answer/stream,
-customer HTTP/persistence journey or triage smoke is claimed. Gemini is private,
-free tier/billing disabled verified; the server-only Supabase secret is missing.
+the existing bounded retries, then stopped. The later Phase 10B production smoke
+supplied the missing successful baseline: a supported synthetic question streamed
+a grounded answer with the expected trusted citation, while one absent policy
+returned controlled insufficient evidence. Customer persistence, history,
+feedback and human-request escalation were exercised with the server secret kept
+only on the backend. Gemini is private and free tier/billing disabled remains
+verified.
 583 backend, 203 frontend and 24 browser tests pass; lint/format/build pass.
 No prompt/model/threshold/DB schema/grant change, migration 017, new dependency,
-email or paid billing. Phase 9C is not complete. See
+email or paid billing. See
 [the formal evaluation report](RAG_EVALUATION.md).
 
 **9D not currently justified by measured evidence.** No load/resource failure
 was observed; 9A's real final-slot races and 9B's serial SSE/cooldown tests do not
 prove concurrent-stream capacity. Complete the blocked live 9C baseline first,
 then reassess if measurements or a concrete target-load requirement justify it.
-9D was not started. Phase 10A deployment readiness is now complete; public deployment remains unstarted.
+9D was not started and remains not justified after the production smoke because
+no concrete performance or concurrent-stream failure was observed.
 
-**Phase 9 is not complete.** Successful live generation/streaming and private
-customer-server configuration are needed before the real synthetic customer
-journey (email configuration only for optional notification delivery).
+**Phase 9 is complete at the defined validation baseline.** Successful deployed
+generation/streaming and the real synthetic customer journey now complement the
+deterministic, hosted database, browser and retrieval evidence.
 Storage API HTTP byte-deletion is not claimed by SQL tests. Fixed-window bursts,
 shared-widget availability, aggregate AI-budget/bot protection, XSS/key compromise
-and production capacity remain limitations. Deployment/framing/CSP, exact hosted
-CORS/Auth redirects and platform logs remain post-deployment Phase 10 work; Phase 10A rechecked free tiers and prepared configuration.
+and production capacity remain limitations. Optional triage classification
+recorded two safe provider-unavailable attempts before the third automatic
+attempt completed successfully; the durable escalation and manual management
+remained available throughout.
 
 **Objective:** Raise the project from working demo to credible professional portfolio quality through broad testing, evaluation, and security review.
 
@@ -237,7 +243,24 @@ CORS/Auth redirects and platform logs remain post-deployment Phase 10 work; Phas
 
 **Objective:** Deploy the finished application using verified free-tier services and present it professionally as an Upwork portfolio project.
 
-**Phase 10A — deployment readiness complete (September 19, 2026).** Current official Render documentation was rechecked. `render.yaml` defines a Free Python/FastAPI service plus free React and external-widget static sites, with manual initial deploys, exact-origin configuration, lightweight health checking, SPA rewriting and safe baseline static headers. No Render database, paid plan, disk, queue, domain or keep-alive was added. GitHub Actions runs Python 3.12/backend checks, Node 24/frontend checks, Chromium Playwright and deterministic offline RAG with no deployment/provider secrets or live services. Production bundle scanning rejects server-secret names and safe environment markers. Beginner deployment and synthetic Northstar demo guides document Auth redirects, CORS, sleeping/in-process-worker behavior, ephemeral disk, secret rotation, rollback and smoke checks. No public Render resource or URL exists yet; CSP awaits exact origins. Live Phase 9 generation remains unverified after the bounded HTTP 503, and post-deployment validation will make only one bounded generation check. No migration 017 was required.
+**Phase 10A — deployment readiness complete (September 19, 2026).** Current official Render documentation was rechecked. `render.yaml` defines a Free Python/FastAPI service plus free React and external-widget static sites, with manual initial deploys, exact-origin configuration, lightweight health checking, SPA rewriting and safe baseline static headers. No Render database, paid plan, disk, queue, domain or keep-alive was added. GitHub Actions runs Python 3.12/backend checks, Node 24/frontend checks, Chromium Playwright and deterministic offline RAG with no deployment/provider secrets or live services. Production bundle scanning rejects server-secret names and safe environment markers. Beginner deployment and synthetic Northstar demo guides document Auth redirects, CORS, sleeping/in-process-worker behavior, ephemeral disk, secret rotation, rollback and smoke checks. At that checkpoint no public Render resource or URL existed, CSP awaited exact origins, and live Phase 9 generation remained unverified after the bounded HTTP 503. No migration 017 was required.
+
+**Phase 10B — public deployment complete (September 21, 2026).** The API,
+frontend and independent widget demo are live on Render Free, using the existing
+Supabase Free project and Gemini free tier with billing disabled. Public URLs are
+recorded in the README and deployment guide. Production smoke passed health,
+direct SPA routes, Auth/session restoration, five-source processing/indexing,
+bounded grounded SSE generation, citation and insufficiency behavior, feedback,
+history reload, human handoff, admin operations, conversation resolve/reopen,
+widget framing/isolation, exact-origin CORS, security headers, logs and browser
+bundle review. A real Render string-environment parsing bug was fixed with a
+regression; no migration 017 was required. CSP remains a precisely documented
+limitation because the shared `/embed` surface needs an explicit future host
+policy rather than a guessed wildcard. Render Free cold starts and the sleeping
+in-process worker remain visible limitations. Optional AI triage classification
+completed on its third automatic attempt after two safe provider-unavailable
+audits; the durable escalation and manual workflow remained intact. Phase 10 is complete for the zero-cost public
+portfolio baseline, with manual deploys retained.
 
 **Completion criteria:**
 

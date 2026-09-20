@@ -488,8 +488,60 @@ Free Render filesystem is disposable.
 The Free backend can sleep after 15 idle minutes. Its in-process triage/outbox
 worker is therefore not continuously available, but pending state and attempt
 fences are durable in Supabase and startup resumes eligible work. No keep-alive
-was introduced. Automatic Render deployment is off until CI and the initial
-manual smoke pass. Public deployment, exact Auth redirects, CSP and platform-log
-inspection are not claimed complete. Phase 9 live generation remains unverified
-after the bounded provider HTTP 503; the post-deployment plan permits one bounded
-generation check, not repeated manual retries. No migration 017 was required.
+was introduced. At the Phase 10A checkpoint automatic deployment was off and
+public deployment, exact Auth redirects, CSP, platform-log inspection and live
+generation were not yet claimed complete. Phase 10B below records the later
+bounded production results. No migration 017 was required.
+
+## Phase 10B production security review (September 21, 2026)
+
+The Render Blueprint is live with one Free FastAPI service and two free static
+sites. No Render database, disk, cache, queue, paid plan, custom domain or
+keep-alive exists. Automatic deploys remain off. Supabase Auth, Postgres,
+pgvector and private Storage remain the durable platform.
+
+Production secrets are stored only in the Render backend environment. The
+Supabase secret key is never configured on either static site and normal
+authenticated user operations continue to use caller JWTs plus RLS. The public
+bundle contains the expected Supabase URL, publishable key and API origin, but
+not the Supabase secret, Gemini or Resend key names/values. Repository and
+working-tree scans remain covered by existing tests and ignore rules.
+
+Post-smoke Render log review found no secret names, JWTs, raw customer session
+tokens, transcript text, retrieved evidence or prompts. Production configuration
+does not enable debug logging. Synthetic identifiers and public widget IDs are
+not credentials. Resend remained unset, so no recipient data or email was sent.
+
+Production CORS returned permission only to
+`https://supportpilot-web-6w61.onrender.com`. A random untrusted origin received
+HTTP 400 without `Access-Control-Allow-Origin`. Methods remained GET, POST,
+PATCH and PUT; DELETE was absent. Both static sites returned `nosniff`,
+`strict-origin-when-cross-origin`, and the camera/microphone/geolocation denial.
+No global frame denial broke `/embed`.
+
+The external widget demo loaded a SupportPilot-origin iframe using only the
+public integration ID. The host page had no customer state in local storage and
+no transcript text in its DOM; close/reopen passed. The hosted customer session,
+SSE answer, trusted citation, feedback, history reload and human-request pause
+were server-confirmed. The deliberately absent policy returned safe
+insufficiency without a fabricated citation or external-knowledge claim.
+
+The escalation persisted correctly. Optional triage classification recorded two
+safe provider-unavailable audits before the third automatic attempt completed
+with a low-priority policy classification. This did not expose provider payloads
+or weaken authorization. Manual escalation and conversation lifecycle operations
+remained available throughout; the notification stayed pending because Resend
+was unset.
+
+CSP remains the principal deployment header gap. The exact API and Supabase
+origins are known, but the shared frontend also serves third-party `/embed`
+content and the approved customer host set is not yet defined. A guessed
+`frame-ancestors` policy could break the product, while broad `connect-src *`
+would weaken it. CSP should be introduced only with an explicit host policy and
+deployed Auth/chat/widget network verification.
+
+One Free-tier cold wake delayed an authenticated page by roughly 50 seconds.
+During sleep the in-process worker is not active; database-owned pending work and
+attempt fencing survive and resume on wake. This is an availability limitation,
+not a confidentiality boundary, and no artificial traffic was added. Migration
+017 was not required.

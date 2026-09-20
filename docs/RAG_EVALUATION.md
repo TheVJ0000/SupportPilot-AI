@@ -1,8 +1,14 @@
 # Phase 9C — formal synthetic RAG evaluation
 
-**September 18, 2026; dataset 1.0.0. Deterministic evaluation complete;
-live embeddings/hosted retrieval validated, generation validation incomplete.
-Phase 9C overall is not complete.**
+**Dataset 1.0.0. Deterministic evaluation and live embeddings/hosted retrieval
+were validated September 18, 2026. A bounded deployed generation/streaming smoke
+passed September 21, 2026, completing the Phase 9C baseline.**
+
+The deployed smoke is deliberately smaller than the 36-case benchmark: it proves
+that the real production path can successfully generate, stream, cite and persist
+one grounded synthetic answer, and safely refuse one absent policy. It does not
+convert the earlier scripted benchmark into live-model quality evidence or erase
+the historical HTTP 400/503 failures documented below.
 
 The benchmark separates retrieval, answerability, grounding, citations,
 insufficiency, injection, tenant isolation and context. No LLM judge, new
@@ -243,10 +249,35 @@ every request-format problem is resolved**. Generation quality, citations under
 live output, injection resistance, context and successful generation latency
 remain unmeasured. The provider error is not a passing insufficient response.
 
-`SUPABASE_SECRET_KEY` is still absent. Real customer HTTP/SSE, persisted history
-and optional triage smoke remain unverified, not simulated as passes. No email
-was sent. No hosted fixture was committed, real data deleted, migration applied,
-or billing enabled. See the security review for the revoked initial-key incident.
+At that evaluator checkpoint, `SUPABASE_SECRET_KEY` was still absent. Real
+customer HTTP/SSE, persisted history and optional triage smoke were therefore
+unverified at that time, not simulated as passes. No email was sent. No hosted
+fixture was committed, real data deleted, migration applied, or billing enabled.
+Phase 10B later supplied the server-only key through the Render secret store and
+performed the bounded production smoke described below.
+
+## Phase 10B bounded production RAG result
+
+The production workspace `Northstar Outfitters — Synthetic Demo` indexed five
+small synthetic FAQs through the deployed frontend, FastAPI, Gemini embeddings,
+Supabase and pgvector. The bounded supported question was: “When will my domestic
+order ship, and how do I track it?” The first logical generation check succeeded
+on one physical provider attempt. The real response streamed through SSE, stated
+the indexed 1–2 business-day dispatch, tracking-after-dispatch and 3–5
+business-day delivery facts, and cited only the matching shipping/tracking FAQ.
+No external source or fabricated citation appeared.
+
+One required follow-up asked for Northstar's deliberately absent price-match
+policy. It returned the exact controlled insufficient-evidence behavior, with no
+invented policy and no citation. The conversation and both assistant outcomes
+persisted; reload restored history, Helpful feedback was server-confirmed, and a
+human request paused further AI sending and created one durable escalation.
+
+The optional triage agent recorded two safe provider-unavailable audits before
+its third automatic attempt completed with a low-priority policy classification
+and summary. Those transient failures are not counted as RAG generation failures.
+The escalation remained available to admins throughout, no email was configured
+or sent, and no prompt/model/threshold/grounding change was made.
 
 ## Regression validation and changes
 
@@ -291,24 +322,25 @@ entailment or silently waive the gate. Full-instruction leakage checks do not
 detect every conceivable rephrased disclosure. Micro citation validity alone
 does not prove a claim is entailed; facts/source coverage supplement it.
 
-Customer HTTP/SSE persistence/authenticated hosted browser behavior, real upload
-extraction, Storage byte deletion, provider latency/concurrency and real security
-under hostile model output remain unverified by these completed runs. Existing
-provider error/security regressions test implementation safeguards, not live AI.
+Customer HTTP/SSE persistence and authenticated hosted browser behavior are now
+covered by the bounded production smoke. Manual FAQ extraction/indexing is also
+covered; a real uploaded document extraction was not repeated because Phase 10B
+required the minimum synthetic knowledge set and avoided unnecessary corpus/data
+creation. Storage byte deletion, provider latency/concurrency and live security
+under hostile model output remain unverified. Existing provider error/security
+regressions test implementation safeguards, not broad live-model robustness.
 
 **9D not currently justified by measured evidence:** no resource, stream-load or
-performance failure was observed in this phase; rough offline timings cannot
-establish one. Phase 9A already measured atomic real-PostgreSQL final-slot races,
-and 9B covered serial SSE/retry/cooldown journeys. They do **not** prove capacity
-or multi-stream behavior. Complete the safe live 9C baseline first, then reassess
-9D if measurements or a concrete expected-load requirement show a need. No 9D
-or Phase 10 work was started.
+performance failure was observed in this phase or the later production smoke;
+rough timings cannot establish one. Phase 9A measured atomic real-PostgreSQL
+final-slot races, 9B covered serial SSE/retry/cooldown journeys, and Phase 10B
+proved one bounded deployed stream. They do **not** prove capacity or
+multi-stream behavior. Reassess 9D only if measurements or a concrete target-load
+requirement shows a need. No 9D load test was started.
 
-Before Phase 10, complete successful live Gemini generation/streaming and the
-real synthetic customer journey (currently missing the server-only Supabase
-secret). Hosted retrieval is validated separately, not the whole live pipeline.
-Review failures rather than
-overfit prompts, and reassess load need. Phase 10 must separately verify current
-free hosting, deployment secrets, CORS/Auth redirects, framing/CSP, logs and
-public-demo bot/shared-quota/aggregate-budget risks. No deployment readiness or
-live/provider completion is claimed.
+Phase 9C and Phase 9 are complete at the defined validation baseline. The
+remaining limitations are broad live-model robustness, hostile live-output
+security, provider/concurrent-stream capacity, Storage API byte deletion,
+aggregate AI-budget/bot protection, optional triage provider availability,
+Render Free cold starts and CSP finalization for an explicit embedding-host
+policy. None is represented as already solved.
